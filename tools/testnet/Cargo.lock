@@ -1006,6 +1006,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "mixer-core-v2"
+version = "0.1.0"
+dependencies = [
+ "blake2b-ref",
+ "mixer-core",
+]
+
+[[package]]
 name = "mixer-prover"
 version = "0.1.0"
 dependencies = [
@@ -1026,6 +1034,7 @@ dependencies = [
  "ckb-jsonrpc-types",
  "ckb-types",
  "mixer-core",
+ "mixer-core-v2",
  "mixer-prover",
  "secp256k1",
  "serde",

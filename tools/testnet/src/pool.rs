@@ -32,7 +32,7 @@ pub struct DataCell {
 }
 
 impl DataCell {
-    fn dep(&self) -> CellDep {
+    pub(crate) fn dep(&self) -> CellDep {
         CellDep::new_builder().out_point(self.out_point.clone()).build()
     }
 }

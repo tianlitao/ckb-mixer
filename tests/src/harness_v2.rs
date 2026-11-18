@@ -291,7 +291,7 @@ impl PoolV2 {
             pool_type_hash: self.type_hash(),
             commitment: fr_to_le_bytes(commitment),
             owner_lock_hash: script_hash(owner),
-            reclaim_since: RECLAIM_AFTER,
+            reclaim_after: RECLAIM_AFTER,
         }
     }
 

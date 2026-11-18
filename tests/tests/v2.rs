@@ -516,7 +516,7 @@ fn an_intent_with_a_bad_commitment_is_not_deposited() {
         pool_type_hash: pool.type_hash(),
         commitment: [0xff; 32],
         owner_lock_hash: script_hash(&owner),
-        reclaim_since: RECLAIM_AFTER,
+        reclaim_after: RECLAIM_AFTER,
     };
     let lock = pool.intent_lock(&mut env, &args);
     let bad = env.fund(&lock, DENOMINATION + TIP);

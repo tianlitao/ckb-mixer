@@ -22,7 +22,7 @@
 //! |      0 |   32 | `pool_type_hash`: script hash of the pool's type script   |
 //! |     32 |   32 | `commitment` of the note being deposited                  |
 //! |     64 |   32 | `owner_lock_hash`: who may take the intent back           |
-//! |     96 |    8 | `reclaim_since`: blocks to wait before that, little-endian |
+//! |     96 |    8 | `reclaim_after`: blocks to wait before that (a count below 2^56, not a `since` value), little-endian |
 //!
 //! Pool cell data (`680 + 32 × root_history` bytes): the v1 layout with a ring
 //! buffer of `root_history` roots instead of 30.
@@ -134,7 +134,7 @@ pub struct IntentArgs {
     pub pool_type_hash: Bytes32,
     pub commitment: Bytes32,
     pub owner_lock_hash: Bytes32,
-    pub reclaim_since: u64,
+    pub reclaim_after: u64,
 }
 
 impl IntentArgs {
@@ -146,7 +146,7 @@ impl IntentArgs {
             pool_type_hash: bytes32(&args[..32])?,
             commitment: bytes32(&args[32..64])?,
             owner_lock_hash: bytes32(&args[64..96])?,
-            reclaim_since: u64::from_le_bytes(args[96..].try_into().ok()?),
+            reclaim_after: u64::from_le_bytes(args[96..].try_into().ok()?),
         })
     }
 
@@ -155,7 +155,7 @@ impl IntentArgs {
         out.extend_from_slice(&self.pool_type_hash);
         out.extend_from_slice(&self.commitment);
         out.extend_from_slice(&self.owner_lock_hash);
-        out.extend_from_slice(&self.reclaim_since.to_le_bytes());
+        out.extend_from_slice(&self.reclaim_after.to_le_bytes());
         out
     }
 }
@@ -185,7 +185,7 @@ const SINCE_VALUE_MASK: u64 = 0x00ff_ffff_ffff_ffff;
 pub enum IntentError {
     /// A syscall failed unexpectedly.
     Syscall = 5,
-    /// The lock args are not `pool_type_hash | commitment | owner_lock_hash | reclaim_since`.
+    /// The lock args are not `pool_type_hash | commitment | owner_lock_hash | reclaim_after`.
     ScriptArgs = 6,
     /// The pool being spent would not count this cell as a deposit: its args are
     /// not a v2 pool's, or name another intent lock than this cell's.
@@ -462,7 +462,7 @@ mod tests {
             pool_type_hash: [1u8; 32],
             commitment: [2u8; 32],
             owner_lock_hash: [3u8; 32],
-            reclaim_since: 0x0102,
+            reclaim_after: 0x0102,
         };
         let bytes = args.to_bytes();
         assert_eq!(bytes.len(), 104);

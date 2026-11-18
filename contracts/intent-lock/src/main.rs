@@ -4,7 +4,7 @@
 //!   pool_type_hash   32      script hash of the pool's type script
 //!   commitment       32      commitment of the note being deposited
 //!   owner_lock_hash  32      who may take the intent back
-//!   reclaim_since    u64 LE  blocks the owner has to wait before doing so
+//!   reclaim_after    u64 LE  blocks the owner has to wait before doing so
 //!
 //! A depositor puts `denomination + tip` into a cell with this lock and is
 //! done: no signature of theirs is needed later. The cell can be spent in two
@@ -16,7 +16,7 @@
 //!
 //! * Reclaim. A cell of the owner is among the inputs, which takes the owner's
 //!   signature, and every intent input carries a relative `since` of at least
-//!   `reclaim_since` blocks. The wait gives whoever batches intents a window
+//!   `reclaim_after` blocks. The wait gives whoever batches intents a window
 //!   in which the owner cannot pull one out from under a pending batch.
 //!   `owner_lock_hash` must name a lock only the owner can unlock.
 //!
@@ -102,7 +102,7 @@ fn reclaim(args: &IntentArgs) -> Result<(), IntentError> {
         return Err(IntentError::Unauthorized);
     }
     for since in QueryIter::new(load_input_since, Source::GroupInput) {
-        if !since_allows_reclaim(since, args.reclaim_since) {
+        if !since_allows_reclaim(since, args.reclaim_after) {
             return Err(IntentError::ReclaimTooEarly);
         }
     }
