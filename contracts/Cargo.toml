@@ -1,0 +1,18 @@
+# On-chain scripts. Built for CKB-VM (riscv64) only, see scripts/build-contracts.sh.
+[workspace]
+resolver = "2"
+members = ["pool-type", "pool-lock"]
+
+[workspace.dependencies]
+# Without the default `libc` feature ckb-std compiles no C code, so the build
+# needs no RISC-V C compiler.
+ckb-std = { version = "1.1", default-features = false, features = ["allocator", "ckb-types", "dummy-atomic"] }
+
+[profile.release]
+overflow-checks = true
+strip = true
+codegen-units = 1
+debug = false
+opt-level = 3
+lto = true
+panic = "abort"

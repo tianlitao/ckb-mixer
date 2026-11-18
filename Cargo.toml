@@ -1,0 +1,8 @@
+[workspace]
+resolver = "2"
+members = ["crates/mixer-core", "crates/prover", "tests"]
+# The on-chain scripts are built for riscv64 from their own workspace.
+exclude = ["contracts"]
+
+[profile.test]
+opt-level = 2

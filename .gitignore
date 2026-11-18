@@ -1,0 +1,21 @@
+# Build outputs
+/target
+/contracts/target
+/contracts/target-size
+/contracts/target-bext
+/contracts/target-profile
+
+# Circuit toolchain and artefacts (make setup regenerates them).
+/.tools
+/circuits/node_modules
+/circuits/build
+
+# Testnet tool: build output, keys, and the state file with the note secrets.
+/tools/testnet/target
+/tools/testnet/*.key
+/tools/testnet/state.json
+/tools/testnet/state.json.partial
+
+# Generated on-chain parameters are checked in: crates/mixer-core/src/poseidon_constants.rs
+
+.DS_Store

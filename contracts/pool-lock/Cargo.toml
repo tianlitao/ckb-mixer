@@ -1,0 +1,9 @@
+[package]
+name = "pool-lock"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Lock script of the mixer pool cell"
+
+[dependencies]
+ckb-std = { workspace = true }

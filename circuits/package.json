@@ -1,0 +1,15 @@
+{
+  "name": "ckb-tornado-circuits",
+  "private": true,
+  "type": "module",
+  "description": "Withdraw circuit (Poseidon, depth 20) and dev-only Groth16 setup for the CKB mixer PoC",
+  "scripts": {
+    "setup": "bash scripts/setup.sh",
+    "gen-constants": "node scripts/gen-poseidon-constants.mjs"
+  },
+  "dependencies": {
+    "circomlib": "2.0.5",
+    "circomlibjs": "0.1.7",
+    "snarkjs": "0.7.5"
+  }
+}

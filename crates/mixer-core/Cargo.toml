@@ -1,0 +1,11 @@
+[package]
+name = "mixer-core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Consensus-critical logic of the CKB mixer PoC, shared by the on-chain scripts and host tooling"
+
+[dependencies]
+ark-bn254 = { version = "0.5", default-features = false, features = ["scalar_field"] }
+ark-ff = { version = "0.5", default-features = false }
+blake2b-ref = "0.3"

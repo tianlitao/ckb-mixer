@@ -1,0 +1,22 @@
+[package]
+name = "mixer-testnet"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Deploy the mixer PoC to CKB testnet and run deposit/withdraw there"
+
+[dependencies]
+mixer-core = { path = "../../crates/mixer-core" }
+mixer-prover = { path = "../../crates/prover" }
+verifier-core = { git = "https://github.com/CECILIA-MULANDI/groth16-ckb", rev = "e969ad154ea2c00df57f68238ddfbcbc9ceb1419" }
+ckb-types = "1.1"
+ckb-hash = "1.1"
+ckb-jsonrpc-types = "1"
+ark-ff = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+secp256k1 = { version = "0.30", features = ["recovery", "global-context"] }
+ureq = { version = "2", features = ["json", "tls"] }
+
+# Host tool, kept out of the root workspace.
+[workspace]

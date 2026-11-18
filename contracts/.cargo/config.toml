@@ -1,0 +1,13 @@
+[build]
+target = "riscv64imac-unknown-none-elf"
+
+# Compile without the RISC-V atomic instructions, as CKB scripts conventionally
+# do; ckb-std's `dummy-atomic` feature supplies the fallbacks (CKB-VM is single
+# threaded). On current rustc `-a` alone leaves its sub-extensions zaamo and
+# zalrsc switched on, which makes LLVM fail with "Cannot select: AtomicLoadAdd",
+# so all three are named.
+#
+# scripts/build-contracts.sh passes the same flags through RUSTFLAGS, because
+# RUSTFLAGS replaces this list instead of extending it.
+[target.riscv64imac-unknown-none-elf]
+rustflags = ["-C", "target-feature=-a,-zaamo,-zalrsc"]

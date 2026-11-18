@@ -1,0 +1,26 @@
+[package]
+name = "mixer-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Host-side helpers and ckb-testtool end-to-end tests for the CKB mixer PoC"
+
+[dependencies]
+mixer-core = { path = "../crates/mixer-core" }
+mixer-prover = { path = "../crates/prover" }
+ckb-testtool = "1.1"
+ark-bn254 = "0.5"
+ark-ec = "0.5"
+ark-ff = "0.5"
+ark-groth16 = "0.5"
+ark-serialize = "0.5"
+ark-snark = "0.5"
+serde_json = "1"
+# Same Groth16 verifier that is linked into the pool type script, used here to
+# check converted proofs on the host before they go on chain.
+verifier-core = { git = "https://github.com/CECILIA-MULANDI/groth16-ckb", rev = "e969ad154ea2c00df57f68238ddfbcbc9ceb1419" }
+
+[dev-dependencies]
+# Only to reproduce the absence-proof forgery that ruled this crate out for the
+# nullifier set, see tests/smt_crate_forgery.rs.
+sparse-merkle-tree = "0.6.1"
