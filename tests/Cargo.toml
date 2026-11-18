@@ -7,6 +7,7 @@ description = "Host-side helpers and ckb-testtool end-to-end tests for the CKB m
 
 [dependencies]
 mixer-core = { path = "../crates/mixer-core" }
+mixer-core-v2 = { path = "../crates/mixer-core-v2" }
 mixer-prover = { path = "../crates/prover" }
 ckb-testtool = "1.1"
 ark-bn254 = "0.5"

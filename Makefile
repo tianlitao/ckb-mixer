@@ -37,6 +37,7 @@ test: contracts
 bench:
 	scripts/build-contracts.sh all
 	cargo test -p mixer-tests --test cycles -- --nocapture
+	cargo test -p mixer-tests --test cycles_v2 -- --nocapture --ignored
 
 clean:
 	cargo clean

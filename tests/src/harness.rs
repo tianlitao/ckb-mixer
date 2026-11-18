@@ -111,7 +111,9 @@ pub fn assert_rejected_one_of(result: Result<Cycle, CkbError>, reasons: &[mixer_
 pub struct Env {
     pub context: Context,
     pool_type_code: OutPoint,
-    pool_lock_code: OutPoint,
+    pub(crate) pool_lock_code: OutPoint,
+    pub(crate) pool_type_v2_code: OutPoint,
+    pub(crate) intent_lock_code: OutPoint,
     always_success_code: OutPoint,
     /// The withdraw circuit's verifying key, in on-chain encoding.
     pub vk: Vec<u8>,
@@ -139,10 +141,21 @@ impl Env {
         let mut context = Context::default();
         let pool_type_code = context.deploy_cell(read_contract(dir, "pool-type"));
         let pool_lock_code = context.deploy_cell(read_contract(dir, "pool-lock"));
+        let pool_type_v2_code = context.deploy_cell(read_contract(dir, "pool-type-v2"));
+        let intent_lock_code = context.deploy_cell(read_contract(dir, "intent-lock"));
         let always_success_code = context.deploy_cell(ALWAYS_SUCCESS.clone());
         let vk = snark::verifying_key();
         let vk_cell = context.deploy_cell(vk.clone().into());
-        Self { context, pool_type_code, pool_lock_code, always_success_code, vk, vk_cell }
+        Self {
+            context,
+            pool_type_code,
+            pool_lock_code,
+            pool_type_v2_code,
+            intent_lock_code,
+            always_success_code,
+            vk,
+            vk_cell,
+        }
     }
 
     /// A lock that anyone can unlock. `owner` only makes the lock hash differ
@@ -228,9 +241,14 @@ impl Env {
     /// cycle checkpoints `(stage, cycles so far)` that a `profile` build of the
     /// pool type script prints. Other builds print none.
     pub fn verify_profiled(&mut self, tx: &TransactionView) -> (Cycle, Vec<(String, u64)>) {
+        self.try_verify_profiled(tx).expect("transaction is accepted")
+    }
+
+    /// Like [`Env::verify_profiled`] for a transaction that may be rejected.
+    pub fn try_verify_profiled(&mut self, tx: &TransactionView) -> Result<(Cycle, Vec<(String, u64)>), CkbError> {
         self.context.set_capture_debug(true);
         let seen = self.context.captured_messages().len();
-        let cycles = self.verify(tx).expect("transaction is accepted");
+        let cycles = self.verify(tx)?;
         let checkpoints = self.context.captured_messages()[seen..]
             .iter()
             .filter_map(|message| {
@@ -243,7 +261,7 @@ impl Env {
                 }
             })
             .collect();
-        (cycles, checkpoints)
+        Ok((cycles, checkpoints))
     }
 
     /// Make the outputs of an accepted transaction spendable.

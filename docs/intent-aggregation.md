@@ -1,7 +1,23 @@
 # 存款意向 cell + 聚合：池子 v2 设计
 
-状态：设计稿，未实现。文中的数字分三种，分别标注：**实测**（本地 `ckb-testtool` 或测试网）、
-**估算**（由实测数字推出，v2 实现后要重测）、**未验证**。
+状态：链上部分（第三节）已实现，有本地测试和实测数字；链下的聚合者工具（第四节）没有写，
+v2 没有上过测试网。文中的数字分三种，分别标注：**实测**（本地 `ckb-testtool` 或测试网）、
+**估算**（由实测数字推出）、**未验证**。
+
+代码在哪：
+
+| 内容 | 位置 |
+| --- | --- |
+| 状态、批量 action、args 布局、Type ID | `crates/mixer-core-v2` |
+| 池子 type script v2 | `contracts/pool-type-v2` |
+| 意向 lock | `contracts/intent-lock` |
+| 池子 lock | `contracts/pool-lock`（与 v1 是同一份代码） |
+| 测试（24 个，对应第五节） | `tests/tests/v2.rs`，辅助代码 `tests/src/harness_v2.rs` |
+| 第六节的测量 | `tests/tests/cycles_v2.rs`（`make bench`） |
+
+v2 的核心逻辑放在单独的 crate 里而不是 `mixer-core` 的一个模块：开了 LTO 之后，只要往 `mixer-core`
+里加代码，v1 脚本的 size 构建产物就会变（实测：字节数不变、内容不同），而那份产物已经部署在测试网上。
+分开之后 v1 四个构建产物的哈希与改动前逐一相同。
 
 ## 一、要解决的问题
 
@@ -110,6 +126,10 @@ args（140 字节）：
 `type_id` 让池子的 type script hash 全链唯一：同样的 args 不可能再建出第二个池子 cell
 （输入只能被花一次）。这顺带解决了 README 里「没有 Type ID」那一条。
 
+脚本只接受两种交易：建池（本组 0 个输入、1 个输出：`type_id` 正确、状态为空、带池子 lock）和
+批量结算（1 个输入、1 个输出，见 3.3）。池子 cell 不能销毁、不能分裂。
+`denomination` 和 `root_history` 为 0 的 args 直接拒绝。
+
 状态：与 v1 相同，只是根的环形缓冲区长度取自 args，共 `680 + 32 × root_history` 字节。
 
 ### 3.2 意向 lock
@@ -125,15 +145,31 @@ args（104 字节）：
 | `owner_lock_hash` | 32 | 谁可以把它撤回 |
 | `reclaim_since` | 8 | 撤回路径要求的 `since`（相对块数），用户自己选 |
 
-解锁规则，对同一个 lock 组里的所有输入：
+解锁规则，对同一个 lock 组里的所有输入。走哪条路由「池子在不在输入里」决定，不是二选一：
 
-* **成交**：交易的输入里有一个 cell 的 type script hash 等于 `pool_type_hash`，
-  并且本组的每个 cell 都没有 type、没有 data。
-* **撤回**：交易的输入里有一个 cell 的 lock hash 等于 `owner_lock_hash`（它的 lock 验证了所有者的签名），
-  并且本组每个输入的 `since` 与 `reclaim_since` 是同一种度量（相对块数）且不小于它。
+* **成交**（交易的输入里有一个 cell 的 type script hash 等于 `pool_type_hash`）：
+  * 那个池子的 args 必须是合法的 v2 args，并且其中的意向 lock（code hash **和** hash type）
+    就是本 cell 的 lock 所用的那一个；
+  * 本组的每个 cell 都没有 type、没有 data。
+* **撤回**（输入里没有这个池子）：
+  * 交易的输入里有一个 cell 的 lock hash 等于 `owner_lock_hash`（它的 lock 验证了所有者的签名）；
+  * 本组每个输入的 `since` 都是「相对块数」的形式（最高字节 `0x80`），数值不小于 `reclaim_since`。
+    绝对高度、按 epoch 或按时间的 `since` 一律不算——它们不能说明这个 cell 已经存在了多少个块。
 
-两条满足其一即可。意向 lock 自己不做任何记账：成交路径只确认「池子的 type script 会在这笔交易里运行」，
-钱和 commitment 的去向全部交给池子 type script 负责（3.3）。
+`owner_lock_hash` 必须指向一个只有所有者能解的 lock。如果它是任何人都能解的，任何人都能撤回。
+args 长度不是 104 字节的 cell 说不出所有者是谁，永远解不开。
+
+意向 lock 自己不做任何记账：钱和 commitment 的去向全部由池子 type script 负责（3.3）。
+但它**必须确认池子会把自己算进去**，这就是成交路径第一条的来由，也是实现时发现的原设计的一个洞：
+
+> 池子认意向是按「lock 的 code hash + hash type 等于 args 里配置的那一对」。同一份 intent-lock 代码
+> 可以用别的 hash type 引用（`data1`、`type`……），那样的 cell 在池子眼里不是意向，不会被记账；
+> 而原设计的成交路径只要求「池子在输入里」。于是谁都可以把这样一个 cell 和池子放进同一笔交易，
+> 池子不记这笔存款，钱被拿走。这种 cell 只会来自用错 hash type 的钱包，但后果是丢钱。
+
+修正后，这样的 cell 成交路径走不通（退出码 60），只能由所有者撤回。
+去掉这条检查重新编译，对应的两个测试会失败（交易被接受）——确认过测试确实在测这件事。
+代价是意向 lock 要读池子的 args，和它的布局绑在了一起。
 
 `reclaim_since` 的作用是给聚合者一个确定的窗口：在这之前意向只能成交、不能撤回，
 聚合者把它放进交易后不会被所有者抽走而导致整笔交易作废。脚本只执行用户声明的值，
@@ -217,7 +253,7 @@ fee 够就排进下一批。
 
 ## 五、安全性分析
 
-逐条是「攻击者想做的事 → 为什么做不到」。实现后每一条都要有对应的测试。
+逐条是「攻击者想做的事 → 为什么做不到」。每一条对应的测试列在本节末尾。
 
 **针对意向 cell**
 
@@ -226,9 +262,14 @@ fee 够就排进下一批。
 * 用一笔存款抵两个意向（double satisfaction）→ 记账的单位是输入，不是 commitment；
   两个 commitment 相同的意向是两个输入，树里要追加两片叶子，池子要多收两份面额。
 * 把意向引到一个冒牌池子 → 意向 args 里是池子的 type script hash，含 Type ID，不可能有第二个。
+  参数完全相同的另一个池子也不行：它的 Type ID 不同，hash 就不同。
+* 用池子不认的 hash type 引用意向 lock，让 cell 被花掉却不记账 → 意向 lock 在成交路径上核对池子 args
+  里配置的正是自己（3.2）。
 * 不经所有者同意撤回 → 撤回路径要求所有者的 lock 在同一笔交易里通过验证。
   （所有者的 lock 如果本身是任何人都能解的，那是所有者自己的问题。）
-* 抢在聚合交易上链前撤回，让聚合交易作废 → `reclaim_since` 之前共识不允许走撤回路径。
+* 抢在聚合交易上链前撤回，让聚合交易作废 → 撤回路径要求相对块数的 `since`，`reclaim_since` 之前
+  共识不让这笔交易上链。（脚本强制的是 `since` 的形式和数值，「还没到时间」由共识拒绝；
+  本地测试工具只跑脚本，后一半没有测。）
 * 意向 cell 上误带了 type script 或 data（比如 UDT）→ 成交路径拒绝，只能撤回，聚合者拿不走。
 
 **针对批量取款**
@@ -257,21 +298,72 @@ fee 够就排进下一批。
 * 链下消息通道的可用性和隐私（4.1）。
 * 可信设置、`verifier-core` 未审计等 v1 的已知问题原样保留。
 
+**对应的测试**（`tests/tests/v2.rs`，每个测试都先确认诚实的交易被接受，再改一处）
+
+| 上面的条目 | 测试 |
+| --- | --- |
+| 花掉意向但不记账 | `an_intent_is_spent_only_by_depositing_it`、`another_pool_is_no_cover_for_taking_an_intent` |
+| 一笔存款抵两个意向 | `two_intents_with_one_commitment_are_two_deposits` |
+| 冒牌池子、同参数的另一个池子 | `a_pool_is_created_once_empty_and_under_the_pool_lock`、`intents_are_counted_by_their_own_pool` |
+| 池子不认的 hash type | `an_intent_under_a_hash_type_the_pool_does_not_count_cannot_be_taken`、`a_pool_may_name_its_intent_lock_by_type_hash` |
+| 撤回的权限和等待 | `only_the_owner_takes_an_intent_back_and_only_after_the_wait` |
+| 意向带 type / data、commitment 不合法、args 长度不对 | `an_intent_with_a_type_script_or_data_can_only_be_taken_back`、`an_intent_with_a_bad_commitment_is_not_deposited` |
+| 一个收款输出抵两笔取款 | `each_withdrawal_needs_its_own_recipient_output`、`one_output_cannot_be_the_payout_of_two_pools` |
+| 同一批里重复花 nullifier | `a_note_is_withdrawn_once_per_batch_and_once_ever` |
+| 改收款人、抬 fee、少付、换证明、换验证密钥 | `every_withdrawal_of_a_batch_binds_recipient_fee_and_payout` |
+| 调换批内顺序 | `recipients_follow_the_order_of_the_withdrawals` |
+| 改 witness、空批次、v1 的 action | `malformed_and_empty_batches_are_rejected` |
+| 输出状态、capacity 不对 | `a_batch_must_produce_exactly_the_next_state`、`a_batch_moves_exactly_its_denominations` |
+| 换掉池子 lock、销毁或分裂池子 cell | `the_pool_cell_keeps_its_lock_and_cannot_be_destroyed_or_split` |
+| 取款引用本批才产生的根、根历史长度 | `a_withdrawal_cannot_use_the_root_its_own_batch_creates`、`the_root_history_is_as_long_as_the_args_say` |
+
+状态和编码本身的规则另有 13 个单元测试（`crates/mixer-core-v2`）。
+
 ## 六、成本与吞吐
 
-默认构建的 v1 实测值（README 第四节）：取款约 69.4M cycles，其中 Groth16 67.4M、nullifier 集合 1.96M；
-每多一次 Poseidon 约 416k；每笔交易的固定开销约 0.12M。
+以下是 v2 脚本在本地 CKB-VM（`ckb-testtool`）里的**实测**值，`root_history = 128`，
+每个批次都在一个新建的池子上跑（`make bench`）。第二张表的最后一列是实现之前的估算，供对照。
 
-| 项目 | 数值 | 依据 |
-| --- | ---: | --- |
-| 每多一笔取款 | ≈ 69.4M cycles，约 350–400 字节 | 估算：v1 单笔取款的可变部分 |
-| 每多一笔存款 | ≈ 0.44M cycles，约 50 字节 | 估算：一次 Poseidon（实测 416k）+ 意向 lock 运行一次（每个意向的 args 不同，各自是一个脚本组；按 pool-lock 的量级估 2 万） |
-| 一个块最多的取款数 | ≈ 50（size 构建 ≈ 34） | 3.5G ÷ 69.4M，整个块只装这一件事时的上限 |
-| 1,000 笔存款 | ≈ 0.44G cycles（块的 13%），44 KB | 估算 |
-| 取款的最低矿工费 | ≈ 0.00012 CKB / 笔 | 权重 11.8 KB × 1,000 shannons/KB |
+| 批次 | 默认构建 cycles | size 构建 cycles | 交易字节 |
+| --- | ---: | ---: | ---: |
+| 建池 | 202,388 | 191,513 | |
+| 1 笔存款 | 8,549,103 | 11,438,148 | 5,596 |
+| 4 笔存款 | 9,055,198 | 12,124,325 | 5,728 |
+| 16 笔存款 | 13,554,855 | 18,207,603 | 6,256 |
+| 64 笔存款 | 34,028,556 | 45,886,985 | 8,368 |
+| 1 笔取款 | 70,053,429 | 102,757,956 | 5,839 |
+| 2 笔取款 | 139,476,693 | 205,231,865 | 6,195 |
+| 8 笔取款 | 558,267,253 | 821,600,169 | 8,523 |
+| 16 笔取款 | 1,114,143,157 | 1,640,059,819 | 12,075 |
+| 8 笔存款 + 8 笔取款 | 567,970,308 | 834,176,886 | 8,912 |
+| 一个块装得下的最大取款批次 | 50 笔：3,483,545,887（99.53%） | 34 笔：3,483,854,166（99.54%） | 29,203 / 20,883 |
 
-限制吞吐的是取款的 Groth16 验证，存款几乎不占资源。一个现实的批次（比如 8 笔取款 + 若干存款）
-约 0.56G cycles，占块的 16%。
+| 项目 | 默认构建 | size 构建 | 估算时的值 |
+| --- | ---: | ---: | ---: |
+| 每多一笔取款 | 69.6M cycles，415 字节 | 102.5M cycles | 69.4M，350–400 字节 |
+| 每多一笔存款（1 → 64 笔的平均） | 0.40M cycles，44 字节 | 0.55M cycles | 0.44M，约 50 字节 |
+| 一个块最多的取款数 | 50（51 笔超限） | 34（35 笔超限） | ≈ 50 / ≈ 34 |
+| 脚本体积 pool-type-v2 / intent-lock | 281,760 / 24,016 字节 | 127,368 / 23,624 字节 | |
+
+交易字节里约 4.8 KB 是池子 cell 的状态（输出 data），每笔池子交易都要带一份；
+存款的第一笔贵是因为要做满 20 次 Poseidon；之后每笔平均约 0.9 次（约 41.6 万一次），
+外加运行一次它自己的意向 lock（约 2.3 万）。
+
+2 笔取款的分段（profile 构建，共 139.6M）：每笔取款 Groth16 约 67.4M、nullifier 集合约 2.2M、
+收款检查约 7 千；程序加载、读状态、比对输出合计约 0.27M，整批只付一次；
+池子 lock 加测试里聚合者的 lock 约 2.1 万。
+4 笔存款的批次里，四个意向 lock 加池子 lock 合计约 11 万，即每个意向 lock 约 2.3 万。
+
+按 1,000 shannons/KB 的最低费率，一笔取款按权重折合约 11.9 KB，最低矿工费约 0.00012 CKB；
+1,000 笔存款约 0.40G cycles（块的 12%）、44 KB（**估算**，由上表外推，没有实际跑过 1,000 笔的批次）。
+
+限制吞吐的是取款的 Groth16 验证，存款几乎不占资源。一个现实的批次（8 笔取款 + 8 笔存款）
+是 0.57G cycles，占块的 16%。
+
+「50 笔」是脚本层面的上限：这样一笔交易按权重折合 594 KB，一个块（597 KB）里放不下别的东西。
+交易池另有一个单笔交易 512 KB 的上限（`TRANSACTION_SIZE_LIMIT`），它按序列化后的字节数算，
+不按权重算，这笔交易只有 29 KB，不受它限制。
+它能不能被节点接受、转发和打包没有测过，下一段的保留意见对它尤其适用。
 
 **未验证：单笔交易能有多大。** 测试网上验证过的最大单笔交易是 1.03 亿 cycles。8 笔取款的批次是
 5.6 亿 cycles；按第一节读到的源码，准入和转发的上限都是 `max_block_cycles`，这么大的交易不会被策略拒绝，
@@ -284,11 +376,12 @@ fee 够就排进下一批。
 
 固定成本：
 
-* 意向 lock 要多部署一份代码。逻辑很少，但 v1 的 pool-lock 同样简单却有 19 KB（约 1.9 万 CKB），
-  主要是 `ckb-std` 的运行时；值得专门压体积。
-* 池子 cell 变大。`root_history = 128` 时状态 4,776 字节，池子 cell 占 5,022 CKB（v1 是 1,819 CKB）；
-  保持 30 时是 1,886 CKB。
-* 每个待成交的意向临时占用 145 CKB 以上，成交或撤回时全部释放。
+* 意向 lock 要多部署一份代码：23.6–24.0 KB，即约 2.4 万 CKB（**实测**体积）。逻辑很少，
+  体积主要是 `ckb-std` 的运行时；值得专门压。
+* pool-type-v2 比 v1 大约 5–6 KB（size 构建 127,368 对 121,400 字节）。
+* 池子 cell 变大。`root_history = 128` 时状态 4,776 字节，池子 cell 占 5,022 CKB（**实测**；v1 是 1,819 CKB）；
+  保持 30 时是 1,886 CKB（按字节数算出，没有建过这样的池子）。
+* 每个待成交的意向临时占用 145 CKB 以上（**实测** 145 CKB），成交或撤回时全部释放。
 
 ### 历史根要留多少个
 
@@ -307,10 +400,10 @@ final exponentiation 从 `w` 次降到 1 次，代价是每个证明多几次 G1
 
 ## 七、实施步骤
 
-1. **脚本和核心库**：`mixer-core` 加批量 action 的编解码和可变长度的根历史；`pool-type` v2
-   （Type ID、扫描意向输入、批量取款）；新增 `intent-lock`。本地测试覆盖第五节的每一条，
-   并重测第六节标为「估算」的数字。
-2. **聚合者**：在 `tools/testnet` 里加 `mixer intent`（建意向）、`mixer aggregate`（拼一批并发送）、
+1. **脚本和核心库（已完成）**：批量 action 的编解码和可变长度的根历史（`mixer-core-v2`）；
+   `pool-type-v2`（Type ID、扫描意向输入、批量取款）；`intent-lock`。本地测试覆盖第五节的每一条，
+   第六节标为「估算」的数字已重测。
+2. **聚合者（未开始）**：在 `tools/testnet` 里加 `mixer intent`（建意向）、`mixer aggregate`（拼一批并发送）、
    取款消息的文件格式；在测试网上跑多个意向 + 多笔取款的批次，以及两个聚合者互相竞争的情形。
 3. **可选**：批量验证 Groth16 的原型和测量。
 

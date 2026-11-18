@@ -1,0 +1,15 @@
+[package]
+name = "mixer-core-v2"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Consensus-critical logic of pool v2 (intent deposits, batches), on top of mixer-core"
+
+# A crate of its own rather than a module of mixer-core: with LTO, merely adding
+# code to mixer-core changes the bytes of the v1 scripts, and those are deployed.
+[dependencies]
+mixer-core = { path = "../mixer-core" }
+blake2b-ref = "0.3"
+
+[dev-dependencies]
+ark-bn254 = { version = "0.5", default-features = false, features = ["scalar_field"] }

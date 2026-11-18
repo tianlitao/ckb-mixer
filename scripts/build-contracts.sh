@@ -6,7 +6,8 @@
 #   default   opt-level 3, base rv64imc                  -> contracts/target
 #   size      opt-level "z" (what groth16-ckb ships)     -> contracts/target-size
 #   bext      opt-level 3 + zba/zbb/zbc/zbs extensions   -> contracts/target-bext
-#   profile   default + cycle checkpoints in pool-type   -> contracts/target-profile
+#   profile   default + cycle checkpoints in the pool    -> contracts/target-profile
+#             type scripts
 #   all       every variant above
 #
 # The variants exist to compare cycle counts; the tests pick one through the
@@ -47,7 +48,7 @@ case "${VARIANT}" in
         TARGET_DIR="${ROOT}/contracts/target-profile"
         OPT_LEVEL=3
         FEATURES="${NO_ATOMICS}"
-        CARGO_FEATURES=(--features pool-type/profile)
+        CARGO_FEATURES=(--features pool-type/profile,pool-type-v2/profile)
         ;;
     *)
         echo "unknown variant: ${VARIANT} (default | size | bext | profile | all)" >&2
@@ -64,8 +65,10 @@ cd "${ROOT}/contracts"
 RUSTFLAGS="-C target-feature=${FEATURES}" \
 CARGO_PROFILE_RELEASE_OPT_LEVEL="${OPT_LEVEL}" \
     cargo build --release --target "${TARGET}" --target-dir "${TARGET_DIR}" \
-    -p pool-type -p pool-lock ${CARGO_FEATURES[@]+"${CARGO_FEATURES[@]}"}
+    -p pool-type -p pool-lock -p pool-type-v2 -p intent-lock \
+    ${CARGO_FEATURES[@]+"${CARGO_FEATURES[@]}"}
 
 OUT="${TARGET_DIR}/${TARGET}/release"
 echo "built (${VARIANT}):"
-ls -l "${OUT}/pool-type" "${OUT}/pool-lock" | awk '{ printf "  %8d bytes  %s\n", $5, $9 }'
+ls -l "${OUT}/pool-type" "${OUT}/pool-lock" "${OUT}/pool-type-v2" "${OUT}/intent-lock" \
+    | awk '{ printf "  %8d bytes  %s\n", $5, $9 }'

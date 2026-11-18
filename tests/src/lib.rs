@@ -2,4 +2,5 @@
 //! around ckb-testtool. The tests themselves live in `tests/`.
 
 pub mod harness;
+pub mod harness_v2;
 pub mod snark;

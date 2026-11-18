@@ -9,7 +9,9 @@ pub enum Error {
     // -- transaction shape
     /// A syscall failed unexpectedly.
     Syscall = 5,
-    /// The type script args are not `denomination | vk_hash | lock_code_hash | lock_hash_type`.
+    /// The type script args are malformed: v1 expects
+    /// `denomination | vk_hash | lock_code_hash | lock_hash_type`, v2 the layout
+    /// in `mixer-core-v2`.
     ScriptArgs = 6,
     /// The transaction does not create exactly one pool cell or update exactly one.
     GroupShape = 7,
@@ -17,12 +19,18 @@ pub enum Error {
     PoolLock = 8,
     /// The pool input has no `input_type` witness.
     Witness = 9,
-    /// The witness is not a well-formed deposit or withdraw action.
+    /// The witness is not a well-formed action: deposit or withdraw for v1, a
+    /// batch for v2.
     ActionEncoding = 10,
     /// The input pool cell data is not a well-formed state.
     StateEncoding = 11,
     /// A new pool cell does not start from the empty state.
     InitialState = 12,
+    /// v2: a new pool's type ID is not derived from the transaction's first
+    /// input and the pool cell's output index.
+    TypeId = 13,
+    /// v2: the transaction neither deposits nor withdraws.
+    EmptyBatch = 14,
 
     // -- deposit
     /// A commitment is not a canonical field element.
