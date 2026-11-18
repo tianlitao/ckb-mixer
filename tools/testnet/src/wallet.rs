@@ -20,7 +20,7 @@ use crate::rpc::{LiveCell, Rpc};
 pub const SHANNONS: u64 = 100_000_000;
 /// Fee rate of the transactions this account pays for, in shannons per 1,000
 /// bytes: five times the nodes' default `min_fee_rate`.
-const FEE_RATE: u64 = 5_000;
+pub const FEE_RATE: u64 = 5_000;
 
 /// secp256k1-blake160-sighash-all on testnet: its type hash, and the
 /// transaction whose output 0 is the dep group with the code and its data.
@@ -155,6 +155,26 @@ pub fn weight(bytes: u64, cycles: u64) -> u64 {
 /// `draft` may already spend cells of other locks, worth `draft_input_capacity`
 /// in total, with one witness each; the pool cell of a deposit is one.
 pub fn fund(rpc: &Rpc, key: &Key, draft: TransactionView, draft_input_capacity: u64) -> Result<TransactionView, String> {
+    fund_with(rpc, key, draft, draft_input_capacity, 0, &|tx| tx)
+}
+
+/// [`fund`], with two things a caller may need to decide.
+///
+/// `least_fee`: the transaction pays this much even where its size asks for
+/// less. Miners rank a transaction by its weight, which for one that verifies
+/// many proofs is set by its cycles and not by its bytes.
+///
+/// `finish`: applied to the funded transaction before it is signed, for
+/// outputs that depend on which cells fund it. It must not change the
+/// transaction's size, inputs or witnesses.
+pub fn fund_with(
+    rpc: &Rpc,
+    key: &Key,
+    draft: TransactionView,
+    draft_input_capacity: u64,
+    least_fee: u64,
+    finish: &dyn Fn(TransactionView) -> TransactionView,
+) -> Result<TransactionView, String> {
     assert_eq!(draft.witnesses().len(), draft.inputs().len(), "one witness per input");
     let lock = key.lock();
 
@@ -168,7 +188,7 @@ pub fn fund(rpc: &Rpc, key: &Key, draft: TransactionView, draft_input_capacity: 
 
     let mut used = 0;
     let mut total = draft_input_capacity;
-    let mut fee = 0;
+    let mut fee = least_fee;
     loop {
         while used == 0 || total < outputs + fee + least_change {
             let cell = cells.get(used).ok_or_else(|| {
@@ -188,7 +208,7 @@ pub fn fund(rpc: &Rpc, key: &Key, draft: TransactionView, draft_input_capacity: 
         // the set of inputs does.
         let needed = (tx.data().serialized_size_in_block() as u64 * FEE_RATE).div_ceil(1000);
         if needed <= fee {
-            return Ok(sign(tx, key, draft.inputs().len(), used));
+            return Ok(sign(finish(tx), key, draft.inputs().len(), used));
         }
         fee = needed;
     }

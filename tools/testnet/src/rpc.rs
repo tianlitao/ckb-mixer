@@ -146,6 +146,21 @@ impl Rpc {
         }))
     }
 
+    /// Every live cell whose lock has the code hash and hash type of `lock`,
+    /// and args that start with its args.
+    pub fn cells_with_lock_prefix(&self, lock: &packed::Script) -> Result<Vec<LiveCell>, String> {
+        self.cells(json!({
+            "script": json_types::Script::from(lock.clone()),
+            "script_type": "lock",
+            "script_search_mode": "prefix",
+        }))
+    }
+
+    /// The node's tip block number.
+    pub fn tip(&self) -> Result<u64, String> {
+        hex_u64(&self.call("get_tip_block_number", json!([]))?)
+    }
+
     /// The live cells of `lock` that hold nothing but capacity: no type script
     /// and no data. The indexer filters, so the data of other cells under the
     /// same lock (deployed code, say) is not downloaded.

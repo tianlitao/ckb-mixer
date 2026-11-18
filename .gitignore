@@ -15,6 +15,10 @@
 /tools/testnet/*.key
 /tools/testnet/state.json
 /tools/testnet/state.json.partial
+/tools/testnet/state-v2.json
+/tools/testnet/state-v2.json.partial
+# Withdrawal requests handed to the aggregator: no secrets, but they belong to a run.
+/tools/testnet/requests
 
 # Generated on-chain parameters are checked in: crates/mixer-core/src/poseidon_constants.rs
 
