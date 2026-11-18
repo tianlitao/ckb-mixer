@@ -134,7 +134,8 @@ impl WithdrawWitness {
         Self { root, nullifier_hash, recipient, fee, nullifier, secret, path_elements, leaf_index }
     }
 
-    fn to_json(&self) -> Value {
+    /// The circuit's input, as snarkjs reads it.
+    pub fn to_json(&self) -> Value {
         json!({
             "root": decimal(&self.root),
             "nullifierHash": decimal(&self.nullifier_hash),

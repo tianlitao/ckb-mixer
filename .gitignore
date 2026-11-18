@@ -23,3 +23,13 @@
 # Generated on-chain parameters are checked in: crates/mixer-core/src/poseidon_constants.rs
 
 .DS_Store
+
+# Web front end and aggregator Worker.
+/crates/mixer-wasm/target
+/web/node_modules
+/web/dist
+/web/.wrangler
+/web/worker/.wrangler
+/web/worker/.dev.vars
+/web/.dev.vars
+/web/*.key
