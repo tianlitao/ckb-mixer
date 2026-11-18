@@ -1,0 +1,10 @@
+[package]
+name = "intent-lock"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Lock script of a deposit intent cell (pool v2)"
+
+[dependencies]
+ckb-std = { workspace = true }
+mixer-core-v2 = { path = "../../crates/mixer-core-v2" }

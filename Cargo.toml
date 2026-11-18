@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/mixer-core", "crates/prover", "tests"]
+members = ["crates/mixer-core", "crates/mixer-core-v2", "crates/prover", "tests"]
 # The on-chain scripts are built for riscv64 from their own workspace.
 exclude = ["contracts"]
 

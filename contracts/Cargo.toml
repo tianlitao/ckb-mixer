@@ -1,7 +1,7 @@
 # On-chain scripts. Built for CKB-VM (riscv64) only, see scripts/build-contracts.sh.
 [workspace]
 resolver = "2"
-members = ["pool-type", "pool-lock"]
+members = ["pool-type", "pool-lock", "pool-type-v2", "intent-lock"]
 
 [workspace.dependencies]
 # Without the default `libc` feature ckb-std compiles no C code, so the build

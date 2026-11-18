@@ -18,6 +18,11 @@
   nullifier 集合的根。
 * 取款交易**不需要任何签名**，只有一个输入（池子 cell），收款地址和手续费被电路绑定，
   因此没有中继者也无法被抢跑改收款人。
+* **池子 v2 的链上部分已实现**（存款意向 cell + 批量结算 + Type ID，
+  [docs/intent-aggregation.md](docs/intent-aggregation.md)）：存款人把钱放进意向 cell 就可以离开，
+  任何人都能把一批意向和取款拼成一笔交易。本地实测每多一笔取款 69.6M cycles、每多一笔存款 0.40M，
+  一个块最多装 50 笔取款。v2 只有本地测试，聚合者工具没有写，也没有上过测试网；
+  本文第一到第七节描述的都是 v1。
 
 ## 一、设计要点
 
@@ -93,20 +98,25 @@ circuits/                  电路、dev-only 可信设置脚本、snarkjs 出证
   scripts/{setup.sh,prove.mjs,gen-poseidon-constants.mjs}
 crates/mixer-core/         链上/链下共用的核心逻辑（no_std）
   src/{field,poseidon,merkle,smt,state,action,error}.rs
+crates/mixer-core-v2/      v2 的核心逻辑：可变长根历史、批量 action、args 布局、Type ID
+crates/prover/             主机侧出证明、格式转换
 contracts/                 链上脚本（独立 workspace，目标 riscv64imac-unknown-none-elf）
-  pool-type/               池子 type script
-  pool-lock/               池子 lock script
+  pool-type/               池子 type script（v1，测试网上部署的就是它）
+  pool-lock/               池子 lock script（v1、v2 共用）
+  pool-type-v2/            池子 type script v2：意向存款、批量取款、Type ID
+  intent-lock/             存款意向 cell 的 lock script
 scripts/build-contracts.sh 构建 4 种变体（default / size / bext / profile）
 tests/                     主机侧测试（ckb-testtool 模拟链）
-  src/{snark.rs,harness.rs}证明格式转换、测试脚手架
-  tests/{e2e.rs,cycles.rs,smt_crate_forgery.rs}
+  src/{snark.rs,harness.rs,harness_v2.rs}  证明格式转换、测试脚手架
+  tests/{e2e.rs,cycles.rs,smt_crate_forgery.rs}  v1
+  tests/{v2.rs,cycles_v2.rs}                     v2
 tools/testnet/             测试网工具（独立 workspace，直接讲 JSON-RPC）
   src/rpc.rs               节点与索引器的 RPC
   src/wallet.rs            资金账户：选币、找零、secp256k1 签名、地址
   src/pool.rs              部署/建池/存款/取款交易，以及从链上交易重放出池子状态
   src/proof.rs             出证明并在链下预验证
   src/bin/mixer.rs         命令行入口
-docs/intent-aggregation.md 池子 v2 设计稿：存款意向 cell + 聚合（未实现）
+docs/intent-aggregation.md 池子 v2 的设计、安全性分析和实测：存款意向 cell + 聚合
 ```
 
 ## 三、如何运行
@@ -130,16 +140,19 @@ make setup       # npm ci + 编译电路 + dev-only 可信设置
 构建链上脚本并跑测试：
 
 ```bash
-make contracts   # 编译 pool-type / pool-lock 到 contracts/target/...
-make test        # cargo test --workspace（29 单元测试 + 26 端到端/对抗性测试 + 2 个 SMT 复现 + 1 个 cycles 报告）
-make bench       # 构建全部 4 种变体并打印 cycles / 体积 / 阶段分解
+make contracts   # 编译四个脚本到 contracts/target/...
+make test        # cargo test --workspace：v1 29 单元 + 26 端到端/对抗性，v2 13 单元 + 24 端到端/对抗性，
+                 # 另有 2 个 SMT 复现和 1 个 v1 cycles 报告
+make bench       # 构建全部 4 种变体并打印 cycles / 体积 / 阶段分解（v1 和 v2；v2 的报告要跑几分钟）
 ```
 
 只跑某个测试文件：
 
 ```bash
 cargo test -p mixer-tests --test e2e -- --nocapture
+cargo test -p mixer-tests --test v2 -- --nocapture
 cargo test -p mixer-tests --test cycles -- --nocapture
+cargo test -p mixer-tests --test cycles_v2 -- --nocapture --ignored
 ```
 
 测试会调用 `node circuits/scripts/prove.mjs` 现场生成真实证明（每笔约 1–2 秒），
@@ -432,7 +445,7 @@ type 和 lock 都以 `data2` 引用上面的代码。
   "同一个池子"），也没有"官方池子"的规范地址。测试网工具因此不按 type script 认池子，而是认建池交易：
   从带这个 type script 的 live cell 沿血缘往回走，能走到那笔建池交易的才算
   （`tools/testnet/src/pool.rs` 的 `Pool::load`）。冒牌池子偷不了钱，但会把用户引进一个匿名集合更小的
-  池子。真实协议需要 Type ID 或登记表。
+  池子。真实协议需要 Type ID 或登记表。v2 的池子 type script 自带 Type ID（已实现，未部署）。
 * 电路里的 `recipient` 只覆盖收款 lock hash 的 31 个字节（末字节被置 0，否则 32 字节不一定是
   规范域元素，见 `crates/mixer-core/src/field.rs`）。证明因此没有完整绑定收款 lock hash：
   要偷走这笔钱，攻击者需要造出一个与受害者 lock hash 在前 248 位上相同的 lock 脚本，
@@ -448,12 +461,13 @@ type 和 lock 都以 `data2` 引用上面的代码。
   这**不等于**每块只能 1 笔：首尾相接的三笔池子交易实测进了同一个区块（第五节）。真正的问题是协调——
   存款人的签名绑定了池子 cell 的某一个版本，前面有交易插进来或被顶掉，这笔存款就得重签；
   互不知情的用户会构造出互相冲突的交易。这是与 Tornado（每笔交易独立、可并行）最大的现实差距。
-  解决办法的设计稿在 [docs/intent-aggregation.md](docs/intent-aggregation.md)（存款意向 cell + 聚合，未实现）。
+  解决办法是池子 v2：存款意向 cell + 聚合，见 [docs/intent-aggregation.md](docs/intent-aggregation.md)。
+  链上脚本已实现并有本地测试；拼批次的聚合者工具没有写，v2 没有上过测试网。
 * 中继者拿不到保证：fee 最终给矿工，谁都可以打包这笔无签名交易。Tornado 用 relayer registry
   解决；PoC 没有。
 * 取款证明生成在主机侧约 1–2 秒、依赖 snarkjs/Node；没有浏览器端实现。
 * 根历史只有 30 笔存款交易；活跃池子里证明必须及时上链（Tornado 是 100 个根）。
-  可以用更大的状态或"根=最近 N 块"的时间策略改善。
+  可以用更大的状态或"根=最近 N 块"的时间策略改善。v2 里根历史的长度是池子的参数，一个批次只用掉一个根。
 * `max_tx_verify_cycles`（默认 70M）不是共识限制：本地提交按 `max_block_cycles`（3.5G）验证，
   70M 只影响"输入尚不存在的孤儿交易由哪类 worker 验证"以及重组后重新加回交易池的上限。
   默认构建的 69.4M–69.5M 刚好在 70M 以内（余量不到 1%，电路或验证密钥一改就可能越界）；

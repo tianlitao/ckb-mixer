@@ -1436,6 +1436,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "mixer-core-v2"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "blake2b-ref",
+ "mixer-core",
+]
+
+[[package]]
 name = "mixer-prover"
 version = "0.1.0"
 dependencies = [
@@ -1459,6 +1468,7 @@ dependencies = [
  "ark-snark",
  "ckb-testtool",
  "mixer-core",
+ "mixer-core-v2",
  "mixer-prover",
  "serde_json",
  "sparse-merkle-tree",
