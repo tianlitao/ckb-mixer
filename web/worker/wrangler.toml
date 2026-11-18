@@ -1,0 +1,26 @@
+name = "ckb-mixer-aggregator"
+main = "index.ts"
+compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
+
+# One batch attempt a minute. A testnet block takes about 8 seconds.
+[triggers]
+crons = ["* * * * *"]
+
+# The pool checkpoint, the withdrawals handed in, and the batch in flight.
+# Create it with `npx wrangler kv namespace create STATE` and put the id here.
+[[kv_namespaces]]
+binding = "STATE"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+[vars]
+RPC_URL = "https://testnet.ckb.dev/rpc"
+MIN_WITHDRAW_FEE = "200000"
+MIN_TIP = "1000000"
+MIN_BLOCKS_LEFT = "10"
+MAX_WITHDRAWALS = "4"
+MAX_INTENTS = "16"
+
+# The aggregator's key is a secret, never a var:
+#   npx wrangler secret put AGGREGATOR_KEY --config worker/wrangler.toml
+# For `wrangler dev`, put AGGREGATOR_KEY=0x... in worker/.dev.vars (git-ignored).

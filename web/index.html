@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CKB 混币池 v2 · 测试网演示</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>CKB 混币池 v2 <span class="tag">测试网演示</span></h1>
+      <p class="warning">
+        <strong>仅限 CKB 测试网。</strong>这个池子的可信设置是开发用的（单人生成，没有仪式），合约和这个页面都未经审计。
+        不要在这里放任何有价值的东西，也不要把它指向主网。
+      </p>
+    </header>
+
+    <main>
+      <section>
+        <h2>池子</h2>
+        <div id="pool" class="grid">正在从链上重放池子…</div>
+      </section>
+
+      <section>
+        <h2>钱包</h2>
+        <p class="hint">存款和撤回需要钱包签名；取款不需要钱包，也不需要事先有 CKB。</p>
+        <div id="wallet"></div>
+        <div id="wallets" class="row"></div>
+        <details>
+          <summary>用测试网私钥（只放在这个页面的内存里，刷新即忘）</summary>
+          <div class="row">
+            <input id="key" type="password" placeholder="0x… 64 位十六进制的测试网私钥" autocomplete="off" spellcheck="false" />
+            <button id="use-key">使用</button>
+          </div>
+          <p class="hint">只为了在测试网上演示。永远不要在网页里输入有真实资产的私钥。</p>
+        </details>
+      </section>
+
+      <section>
+        <h2>存款</h2>
+        <p class="hint">
+          存款不直接进池子：你先建一个“意向”cell（面额 + 给聚合者的小费），聚合者把它和别人的一起成交进池子。
+          没人成交的话，等待期过后你可以原样取回。
+        </p>
+        <div class="row">
+          <label>小费 (CKB) <input id="tip" value="0.1" inputmode="decimal" /></label>
+          <label>多少个区块后可撤回 <input id="wait" value="30" inputmode="numeric" /></label>
+          <button id="new-note">生成票据</button>
+        </div>
+        <div id="backup" hidden>
+          <p class="warning">
+            <strong>先备份这张票据，再签名。</strong>取款只凭它；丢了，这笔钱谁也取不出来。它只存在这个浏览器的本地存储里，不会上传到任何地方。
+          </p>
+          <textarea id="backup-note" readonly rows="3"></textarea>
+          <div class="row">
+            <button id="copy-note">复制</button>
+            <button id="download-note">下载为文件</button>
+            <label class="check"><input id="backed-up" type="checkbox" /> 我已经把票据保存到别处</label>
+            <button id="deposit" class="primary" disabled>签名并创建意向</button>
+            <button id="cancel-note">放弃这张票据</button>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>我的票据</h2>
+        <div id="notes"></div>
+        <details>
+          <summary>导入票据</summary>
+          <div class="row">
+            <input id="import-note" placeholder="ckbmix2-testnet-…" autocomplete="off" spellcheck="false" />
+            <button id="import">导入</button>
+          </div>
+        </details>
+      </section>
+
+      <section id="withdraw" hidden>
+        <h2>取款</h2>
+        <p class="hint" id="withdraw-note"></p>
+        <div class="row">
+          <label class="wide">收款地址（测试网）<input id="recipient" placeholder="ckt1…" autocomplete="off" spellcheck="false" /></label>
+          <label>手续费 (CKB) <input id="fee" value="0.01" inputmode="decimal" /></label>
+        </div>
+        <p class="hint">
+          收款地址到手 = 面额 − 手续费。证明在这个浏览器里生成，票据的秘密不离开这里；证明绑定了收款地址和手续费，别人改不了。
+        </p>
+        <div class="row">
+          <button id="prove" class="primary">生成证明</button>
+          <button id="to-aggregator" disabled>交给聚合者</button>
+          <button id="send-self" disabled>自己发送（保底）</button>
+          <button id="close-withdraw">关闭</button>
+        </div>
+        <p class="hint">
+          “交给聚合者”：聚合者把它和别的存取款打包，手续费归聚合者。“自己发送”：只含这一笔取款的交易，不需要签名，手续费归矿工——聚合者不理你时用它。
+        </p>
+        <pre id="message" hidden></pre>
+      </section>
+
+      <section>
+        <h2>聚合者</h2>
+        <div class="row">
+          <label class="wide">地址 <input id="aggregator" autocomplete="off" spellcheck="false" /></label>
+          <button id="save-aggregator">保存</button>
+        </div>
+        <div id="aggregator-info" class="hint"></div>
+      </section>
+
+      <section>
+        <h2>记录</h2>
+        <div id="log"></div>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

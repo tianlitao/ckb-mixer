@@ -1,0 +1,37 @@
+/* tslint:disable */
+/* eslint-disable */
+export const memory: WebAssembly.Memory;
+export const __wbg_ledger_free: (a: number, b: number) => void;
+export const ckb_hash: (a: number, b: number) => [number, number];
+export const commitment: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const decode_batch: (a: number, b: number) => [number, number];
+export const intent_args: (a: number, b: number, c: number, d: number, e: number, f: number, g: bigint) => [number, number, number, number];
+export const is_field_element: (a: number, b: number) => number;
+export const ledger_apply: (a: number, b: number, c: number, d: number, e: number) => [number, number];
+export const ledger_batch: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+export const ledger_capacity: (a: number) => bigint;
+export const ledger_current_root: (a: number) => [number, number];
+export const ledger_denomination: (a: number) => bigint;
+export const ledger_is_known_root: (a: number, b: number, c: number) => number;
+export const ledger_is_spent: (a: number, b: number, c: number) => number;
+export const ledger_leaf_count: (a: number) => number;
+export const ledger_leaf_index: (a: number, b: number, c: number) => number;
+export const ledger_new: (a: number, b: number, c: bigint) => [number, number, number];
+export const ledger_nullifier_count: (a: number) => number;
+export const ledger_nullifier_root: (a: number) => [number, number];
+export const ledger_restore: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const ledger_snapshot: (a: number) => [number, number];
+export const ledger_state_bytes: (a: number) => [number, number];
+export const ledger_withdraw_input: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: bigint) => [number, number, number, number];
+export const nullifier_hash: (a: number, b: number, c: number) => [number, number, number, number];
+export const parse_intent_args: (a: number, b: number) => [number, number];
+export const pool_config: (a: number, b: number) => [number, number, number, number];
+export const proof_from_snarkjs: (a: number, b: number) => [number, number];
+export const reclaim_since: (a: bigint) => [bigint, number, number];
+export const vk_from_snarkjs: (a: number, b: number) => [number, number];
+export const __wbindgen_externrefs: WebAssembly.Table;
+export const __wbindgen_malloc: (a: number, b: number) => number;
+export const __wbindgen_free: (a: number, b: number, c: number) => void;
+export const __externref_table_dealloc: (a: number) => void;
+export const __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+export const __wbindgen_start: () => void;
