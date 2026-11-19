@@ -1,0 +1,5 @@
+name = "ckb-mixer-web"
+compatibility_date = "2026-11-01"
+
+# `npm run build` with VITE_AGGREGATOR_URL set first: the value is compiled in.
+assets = { directory = "../dist" }

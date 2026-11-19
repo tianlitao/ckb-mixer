@@ -11,7 +11,7 @@ crons = ["* * * * *"]
 # Create it with `npx wrangler kv namespace create STATE` and put the id here.
 [[kv_namespaces]]
 binding = "STATE"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "84b84499f52f48a98bc8cf227c20b213"
 
 [vars]
 RPC_URL = "https://testnet.ckb.dev/rpc"

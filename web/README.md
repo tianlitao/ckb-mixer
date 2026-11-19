@@ -4,7 +4,7 @@
 
 这里有两样东西，都针对 README §五 里已经部署在测试网上的池子 v2：
 
-- **前端**（`index.html`、`src/`）：纯静态页面，可以放到 Cloudflare Pages。连接钱包、建存款意向、在浏览器里生成取款证明、撤回意向、看池子和自己票据的状态。它直接连公共节点 `https://testnet.ckb.dev/rpc`（该节点允许跨域），没有自己的后端。
+- **前端**（`index.html`、`src/`）：纯静态页面，作为 Workers 静态资源部署。登录用 CCC 官方的 `<ccc-connector>`（`@ckb-ccc/connector`）：右上角一个「连接钱包」，点开就是它自己的钱包选择、连接、断开界面，页面只负责把连上的 signer 收下来。存款、建意向、在浏览器里生成取款证明、撤回、看池子和自己票据的状态都在这里；聚合者的地址在构建时编进去，页面上只读。它直接连公共节点 `https://testnet.ckb.dev/rpc`（该节点允许跨域），没有自己的后端。
 - **聚合者**（`worker/`）：一个 Cloudflare Worker。HTTP 接口收取款消息，定时任务把等待中的意向和收到的取款打成批次发出去，用它自己的密钥付矿工费、收小费和手续费。
 
 两边共用 `shared/`（节点 RPC、池子重放、交易组装）和 `wasm/`。`wasm/` 是 `crates/mixer-wasm` 的构建产物：Poseidon、承诺树、nullifier 集合、池子状态和所有编码都是链上脚本用的那几个 crate 编出来的，没有用 JS 重写。
@@ -16,6 +16,11 @@
 - 取款消息不含秘密，证明绑定了收款地址和手续费。聚合者不理你，可以点“自己发送（保底）”：只含这一笔取款的交易，不需要签名，也不需要事先有 CKB，手续费归矿工。
 - 意向的等待期是**区块数**，不是编码过的 `since`。页面和 wasm 都拒绝 2^56 及以上的值（那样的 cell 建得出来，但永远撤不回），并在签名前把 lock 参数按脚本的读法再解析一遍核对。
 - 页面带的电路文件（`public/circuit/`）必须是池子的那一份：取款前会把 `verification_key.json` 转成链上格式，哈希后和池子参数里的 `vk_hash` 比对。
+- 没有钱包扩展时，右上角「连接钱包 → 管理」，或存款页「没有钱包扩展？」下面，可以粘一把一次性的测试网私钥。它只在这个标签页的内存里，刷新即忘，不发往任何地方。
+
+## 页面
+
+一张纸、一种墨。字体是自托管的 Instrument Sans（正文）和 Martian Mono（数字、哈希），不连字体 CDN；颜色只有纸色、墨色、一根发丝线和池子自己的绿。登录、取款弹窗的样式跟着页面走（CCC 的组件用 CSS 变量换色，语言设成 `zh-Hans`），取款是一个 `dialog`，小屏幕也能用。动画只有加载时标题的一次擦入，`prefers-reduced-motion` 下关掉。
 
 ## 本地运行
 
@@ -63,9 +68,28 @@ curl 'http://localhost:8787/__scheduled?cron=*+*+*+*+*'
 
 ## 部署到 Cloudflare
 
-以下命令需要你自己的 Cloudflare 账号，**我没有运行过**。
+已经部署在：
 
-Worker：
+- 页面：<https://ckb-mixer-web.tianlitao3399.workers.dev>
+- 聚合者：<https://ckb-mixer-aggregator.tianlitao3399.workers.dev>
+
+页面是 Workers 静态资源，不是 Pages：Cloudflare 现在会把新建的 Pages 项目委派给 Workers，`wrangler pages deploy` 对一个不存在的项目名只会报错。
+
+重新部署（需要账号里已有 KV 命名空间 `STATE` 和 Worker 的 `AGGREGATOR_KEY` secret）：
+
+```bash
+VITE_AGGREGATOR_URL=https://ckb-mixer-aggregator.tianlitao3399.workers.dev npm run build
+```
+
+```bash
+npm run worker:deploy
+```
+
+```bash
+npm run web:deploy
+```
+
+第一次部署一个全新的账号时：
 
 ```bash
 npx wrangler login
@@ -81,21 +105,7 @@ npx wrangler kv namespace create STATE
 npx wrangler secret put AGGREGATOR_KEY --config worker/wrangler.toml
 ```
 
-```bash
-npm run worker:deploy
-```
-
-页面（把 Worker 的地址编进去；用户也可以在页面上改）：
-
-```bash
-VITE_AGGREGATOR_URL=https://ckb-mixer-aggregator.<你的子域>.workers.dev npm run build
-```
-
-```bash
-npm run pages:deploy
-```
-
-也可以让 Pages 连 Git 仓库构建：根目录 `web`，构建命令 `npm run build`，输出目录 `dist`。`wasm/` 和 `public/circuit/` 都在仓库里，构建不需要 Rust。
+聚合者密钥只用于付矿工费和收小费，地址可以在 `/info` 看到。它需要有至少一个约 100 CKB 的找零 cell 来垫费。
 
 ## 重新生成 wasm
 
@@ -129,7 +139,7 @@ cargo install wasm-bindgen-cli --version 0.2.130 --locked --root .tools
 
 ## 没有验证的、已知的局限
 
-- **没有部署到 Cloudflare。** Worker 只在本地 `wrangler dev`（workerd）里跑过；真实的 cron 触发、线上 KV、`wrangler secret`、Pages 部署都没有试过。
+- **线上部署只做过冒烟检查。** 页面和聚合者都已部署（见上），线上页面能打开、聚合者 `/info` 有应答；真实的 cron 触发、线上 KV 的写入和 `wrangler secret` 读取没有在生产流量下验证过。页面本身的端到端流程仍然是在本地 `vite` 上走通的。
 - **Worker 的 CPU 和子请求限额没有在线上量过。** 本机上聚合者自己的计算很小（从检查点恢复约 1 ms，含 1 / 4 笔取款的批次约 6 / 18 ms，另加一次 secp256k1 签名），时间主要花在等节点。但免费档每次调用 10 ms CPU、50 个子请求：带取款的批次大概率超出 CPU 限额，第一次同步要从创建交易重放（现在 19 笔交易，约 40 个请求），也贴近子请求上限。**应当按需要 Workers 付费档来准备**；之后的同步是增量的。nullifier 集合的证明开销随已取款数线性增长（每笔取款要把整个集合重建一遍），池子大了以后这里要改成持久化的树。
 - **真实钱包没有测过。** 页面列出了 CCC 能发现的钱包（JoyID、UTXO Global、MetaMask 等），但端到端只用“测试网私钥”这条路走通——那是为演示加的，私钥只在页面内存里。钱包连接、它们各自的签名流程、非 secp256k1 锁作为意向所有者时的撤回，都没有验证。
 - **聚合者之间的竞争没有测过。** 池子 cell 同一时刻只能被一笔交易花费。别人的批次先进了节点的交易池时，试运行仍会通过而发送被拒（试运行不检查 replace-by-fee）；Worker 的处理是下一轮重来，页面的保底路径是提示稍后再点一次。这两条都只是按设计写了，没有制造过冲突来验证。
