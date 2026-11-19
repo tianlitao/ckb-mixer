@@ -1,0 +1,11 @@
+# The page: Workers static assets, built by `npm run build` into ../dist.
+#
+#   VITE_AGGREGATOR_URL=https://ckb-mixer-aggregator.<subdomain>.workers.dev npm run build
+#   npm run web:deploy
+#
+# The aggregator URL is compiled into the bundle; a rebuild is needed to change it.
+
+name = "ckb-mixer-web"
+compatibility_date = "2026-11-01"
+
+assets = { directory = "../dist" }

@@ -4,7 +4,7 @@
 
 这里有两样东西，都针对 README §五 里已经部署在测试网上的池子 v2：
 
-- **前端**（`index.html`、`src/`）：纯静态页面，可以放到 Cloudflare Pages。连接钱包、建存款意向、在浏览器里生成取款证明、撤回意向、看池子和自己票据的状态。它直接连公共节点 `https://testnet.ckb.dev/rpc`（该节点允许跨域），没有自己的后端。
+- **前端**（`index.html`、`src/`）：纯静态页面，部署在 Cloudflare Workers 静态资源上。连接钱包、建存款意向、在浏览器里生成取款证明、撤回意向、看池子和自己票据的状态。它直接连公共节点 `https://testnet.ckb.dev/rpc`（该节点允许跨域），没有自己的后端。
 - **聚合者**（`worker/`）：一个 Cloudflare Worker。HTTP 接口收取款消息，定时任务把等待中的意向和收到的取款打成批次发出去，用它自己的密钥付矿工费、收小费和手续费。
 
 两边共用 `shared/`（节点 RPC、池子重放、交易组装）和 `wasm/`。`wasm/` 是 `crates/mixer-wasm` 的构建产物：Poseidon、承诺树、nullifier 集合、池子状态和所有编码都是链上脚本用的那几个 crate 编出来的，没有用 JS 重写。
@@ -48,7 +48,7 @@ npm run dev
 curl 'http://localhost:8787/__scheduled?cron=*+*+*+*+*'
 ```
 
-另有两个自检脚本：`npm run sync` 重放测试网池子并和链上比对；`npx tsx scripts/bench.ts` 测量聚合者自身计算的耗时。
+另有两个自检脚本：`npm run sync` 重放测试网池子并和链上比对，同时报告耗时、请求数和 CPU（加 `-- --checkpoint <文件>` 会把检查点写成 JSON，可以拿去填 Worker 的 KV）；`npx tsx scripts/bench.ts` 测量聚合者自身计算的耗时。
 
 ### 聚合者的接口
 
@@ -63,39 +63,111 @@ curl 'http://localhost:8787/__scheduled?cron=*+*+*+*+*'
 
 ## 部署到 Cloudflare
 
-以下命令需要你自己的 Cloudflare 账号，**我没有运行过**。
+已经部署在（2026-11-19，账户 `tianlitao3399@gmail.com`）：
 
-Worker：
+- 页面：<https://ckb-mixer-web.tianlitao3399.workers.dev> —— Workers 静态资源（不是 Pages）
+- 聚合者：<https://ckb-mixer-aggregator.tianlitao3399.workers.dev> —— 每分钟一次的 cron，KV 存检查点和取款队列
 
-```bash
-npx wrangler login
-```
-
-```bash
-npx wrangler kv namespace create STATE
-```
-
-把输出的 id 填进 `worker/wrangler.toml` 的 `kv_namespaces`，然后：
+中国大陆的网络访问 `*.workers.dev` 需要代理（本机直连是 DNS 直接失败）。走代理时：
 
 ```bash
-npx wrangler secret put AGGREGATOR_KEY --config worker/wrangler.toml
+export https_proxy=http://127.0.0.1:7897 http_proxy=http://127.0.0.1:7897 all_proxy=socks5://127.0.0.1:7897
+curl https://ckb-mixer-aggregator.tianlitao3399.workers.dev/info
 ```
+
+### 为什么是 Workers 静态资源
+
+Cloudflare 现在把 Pages 并进了 Workers：新建的 `wrangler pages project create` 会委派给 `wrangler deploy`，对一个不存在的项目名只会报错（wrangler 4.164 实测）。静态资源这一套的配置更简单，和聚合者一样是一条 `wrangler deploy`，所以两个都走 Workers。
+
+旧的 Pages 路线仍然可以用 `npx wrangler pages deploy dist --project-name <名字> --force` 部署，得到 `*.pages.dev` 地址；本仓库没有这么做。
+
+### 重新部署
+
+聚合者（`worker/wrangler.toml`，绑定见下表）：
 
 ```bash
 npm run worker:deploy
 ```
 
-页面（把 Worker 的地址编进去；用户也可以在页面上改）：
+页面（`deploy/wrangler.toml`）。聚合者的地址是在**构建时**编进包里的，改了地址要重新构建：
 
 ```bash
-VITE_AGGREGATOR_URL=https://ckb-mixer-aggregator.<你的子域>.workers.dev npm run build
+VITE_AGGREGATOR_URL=https://ckb-mixer-aggregator.tianlitao3399.workers.dev npm run build
 ```
 
 ```bash
-npm run pages:deploy
+npm run web:deploy
 ```
 
-也可以让 Pages 连 Git 仓库构建：根目录 `web`，构建命令 `npm run build`，输出目录 `dist`。`wasm/` 和 `public/circuit/` 都在仓库里，构建不需要 Rust。
+### 一个全新的账号要准备什么
+
+1. `npx wrangler login`。
+2. `npx wrangler kv namespace create STATE`，把 id 填进 `worker/wrangler.toml` 的 `kv_namespaces`。
+3. `npx wrangler secret put AGGREGATOR_KEY --config worker/wrangler.toml`，粘进一把**只用于测试网**的私钥。
+4. 给这把私钥的地址转至少一个约 100 CKB 的找零 cell（垫矿工费；聚合者自己收不收费取决于池子参数，见下面的账目）。
+
+聚合者的密钥只用来付矿工费和收小费，地址可以用 `GET /info` 看到（现在是 `ckt1qzda0cr08m85hc8jlnfp3zer7xulejywt49kt2rr0vthywaa50xwsqvztn2045czqj62790rxak6wqywj27a9ugrxl9qa`）。它不持有任何人的资金。
+
+### 线上的配置（照着核对）
+
+`worker/wrangler.toml`：
+
+| 项 | 值 |
+| --- | --- |
+| cron | `* * * * *`（每分钟一次） |
+| KV 绑定 | `STATE` = `84b84499f52f48a98bc8cf227c20b213` |
+| secret | `AGGREGATOR_KEY` |
+| `RPC_URL` | `https://testnet.ckb.dev/rpc` |
+| `MIN_WITHDRAW_FEE` / `MIN_TIP` | `200000` / `1000000` shannons（0.002 / 0.01 CKB） |
+| `MIN_BLOCKS_LEFT` | `10` |
+| `MAX_WITHDRAWALS` / `MAX_INTENTS` | `4` / `16` |
+| `LIST_EVERY` | `2`（见下） |
+
+`deploy/wrangler.toml`：`name = "ckb-mixer-web"`，`assets = { directory = "../dist" }`，没有 Worker 脚本。静态资源请求不计费、不算 Worker 请求数。
+
+### 免费档的限额决定了这些参数
+
+从 Cloudflare 文档（2026-11-19 抓取）和线上实测得到的数字：
+
+| 限额 | 免费档 | 这个项目怎么用 |
+| --- | --- | --- |
+| Worker CPU | **每次 HTTP 请求和每次 cron 触发 10 ms** | 空闲 tick 实测 **1–2 ms**；带取款的批次没测到 |
+| Worker 请求 | 100,000 / 天 | 每分钟 1 次 cron = 1,440 / 天，加页面请求，够用 |
+| 子请求 | 50 / 次调用 | 增量同步从检查点起 1 次请求，首次重放 4 次（分批 `get_transaction`） |
+| KV 读 | 100,000 / 天 | 每次 tick 一定读 `pending`；有活才读检查点和队列里的条目，空闲时连池子都不碰 |
+| **KV 写** | **1,000 / 天** | 空闲 tick 不写；有批次时写 `pending` + 每笔取款一条 |
+| **KV 列表** | **1,000 / 天** | 一天 1,440 分钟 > 1,000，所以 `LIST_EVERY = 2`：每两分钟才列一次取款队列 |
+| KV 删 | 1,000 / 天 | 只有 `pending` 结束时删一条 |
+| cron 触发 | 5 个 / 账号 | 用了 1 个 |
+
+`LIST_EVERY` 就是为免费档的 1,000 次列表限额设的；付费档可以改成 `1`（每分钟都看队列）。KV 对同一个键限 1 写/秒，本项目的写法不会踩到；但两分钟才看一次队列，意味着**一笔取款最多等约两分钟**才可能被打进批次。
+
+KV 是最终一致的，两次 cron 理论上可能重叠；重叠时第二笔批次会因为池子 cell 已被花费而被节点拒绝，不会造成资金损失，但没有制造过这种情况来验证。
+
+### 线上已经发生过的事（2026-11-19，UTC）
+
+有人用**已部署的页面**（不是本地）对测试网池子跑了一遍，共三笔交易：
+
+| 时间 | 做了什么 | 交易 |
+| --- | --- | --- |
+| 03:19:24 | 页面建存款意向（150.1 CKB） | `0xc13b295f76c1dfb34586081b8839bc70f85568c21db9a82febfa1516632b3357` |
+| 03:20:48 | 线上聚合者把它打进池子：池子 1950 → 2100 CKB，聚合者拿 0.1 CKB 小费 | `0x175fa29dd96d4786a22caf8ef4800b523029c4dce62fbcf2cd7ad7e871db4689` |
+| 03:22:56 | 页面「自己发送（保底）」取款 149.99 CKB | `0x3fd0dcf8e5797a7c543857cd9e3bfbab30db3aaea5d13a464083198173fb46b5` |
+
+第二笔是线上 cron 发的，说明**真实 cron 触发、线上 KV、`wrangler secret`、公共节点**在线上都工作了。但它只打包了一个存款意向，没有带取款：**这台线上聚合者还没走过 `POST /withdrawals` 收取款、排队、打包的路径**（见下面的局限；`wrangler tail` 里从没出现过 `POST /withdrawals`）。第三笔走的是页面的保底路径，不经过聚合者。
+
+### 实测的 CPU（`wrangler tail`）
+
+| 场景 | CPU |
+| --- | --- |
+| 首次从创建交易重放（部署后第一个 tick） | 72 ms |
+| 空闲 tick，**旧版**（每分钟都重建池子） | 9–32 ms，多数 10–24 ms |
+| 空闲 tick，新版（先找活，没活就不碰池子） | **1–2 ms** |
+| `GET /info`（热） | 0–2 ms |
+| 带存款的批次（03:20:48 那次） | 没抓到（当时的 tail 在批次前就断了） |
+| 带取款的批次 | **没有在线上量到** |
+
+免费档每次 10 ms。新版空闲 tick 在限额以内；**带取款的批次大概率超**（本机不含网络、含 4 笔取款约 18 ms，另加签名），在线上一旦稳定超限会被终止。所以：要么上 Workers 付费档（CPU 上限可提到 5 分钟），要么把批次拆小、并把 nullifier 集合的证明改成持久化结构（现在每笔取款都要重建整个集合，成本随已取款数线性增长）。这次线上批次只带 1 个意向，没超，不代表取款批次不超。
 
 ## 重新生成 wasm
 
@@ -129,8 +201,8 @@ cargo install wasm-bindgen-cli --version 0.2.130 --locked --root .tools
 
 ## 没有验证的、已知的局限
 
-- **没有部署到 Cloudflare。** Worker 只在本地 `wrangler dev`（workerd）里跑过；真实的 cron 触发、线上 KV、`wrangler secret`、Pages 部署都没有试过。
-- **Worker 的 CPU 和子请求限额没有在线上量过。** 本机上聚合者自己的计算很小（从检查点恢复约 1 ms，含 1 / 4 笔取款的批次约 6 / 18 ms，另加一次 secp256k1 签名），时间主要花在等节点。但免费档每次调用 10 ms CPU、50 个子请求：带取款的批次大概率超出 CPU 限额，第一次同步要从创建交易重放（现在 19 笔交易，约 40 个请求），也贴近子请求上限。**应当按需要 Workers 付费档来准备**；之后的同步是增量的。nullifier 集合的证明开销随已取款数线性增长（每笔取款要把整个集合重建一遍），池子大了以后这里要改成持久化的树。
+- **线上的取款路径没有验证过。** 线上聚合者只处理过一个存款意向（03:20 那笔）；`POST /withdrawals` 收下一条取款、排队、再打包进批次的整条路只在本地 `wrangler dev` 上跑通过（旧的验证表里那次 `0xe889fe4d…`）。线上 `tail` 里从来没有 `POST /withdrawals`，那次 149.99 CKB 的取款走的是页面保底路径。
+- **带取款的批次 CPU 没有在线上量过。** 本机上聚合者自己的计算很小（从检查点恢复约 1 ms，含 1 / 4 笔取款的批次约 6 / 18 ms，另加一次 secp256k1 签名），时间主要花在等节点。免费档每次调用 10 ms CPU、50 个子请求：空闲 tick 实测 1–2 ms，但带取款的批次大概率超出 CPU 限额。**应当按需要 Workers 付费档来准备**，或者把批次拆小。nullifier 集合的证明开销随已取款数线性增长（每笔取款要把整个集合重建一遍），池子大了以后这里要改成持久化的树。
 - **真实钱包没有测过。** 页面列出了 CCC 能发现的钱包（JoyID、UTXO Global、MetaMask 等），但端到端只用“测试网私钥”这条路走通——那是为演示加的，私钥只在页面内存里。钱包连接、它们各自的签名流程、非 secp256k1 锁作为意向所有者时的撤回，都没有验证。
 - **聚合者之间的竞争没有测过。** 池子 cell 同一时刻只能被一笔交易花费。别人的批次先进了节点的交易池时，试运行仍会通过而发送被拒（试运行不检查 replace-by-fee）；Worker 的处理是下一轮重来，页面的保底路径是提示稍后再点一次。这两条都只是按设计写了，没有制造过冲突来验证。
 - 批次里某笔取款被脚本拒绝时“逐笔试运行、剔除坏的”这条路径没有被触发过。
