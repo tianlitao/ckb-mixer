@@ -2,17 +2,25 @@ name = "ckb-mixer-aggregator"
 main = "index.ts"
 compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
+# Served at https://ckb-mixer-aggregator.<account subdomain>.workers.dev, and
+# only there: no separate URL for every uploaded version.
+workers_dev = true
+preview_urls = false
 
 # One batch attempt a minute. A testnet block takes about 8 seconds.
 [triggers]
 crons = ["* * * * *"]
 
 # The pool checkpoint, the withdrawals handed in, and the batch in flight.
-# Create it with `npx wrangler kv namespace create STATE` and put the id here.
+# This id is a namespace in the account this Worker runs under now. For another
+# account: `npx wrangler kv namespace create STATE`, and put its id here.
 [[kv_namespaces]]
 binding = "STATE"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "84b84499f52f48a98bc8cf227c20b213"
 
+# The aggregator's key is a secret, never a var:
+#   npx wrangler secret put AGGREGATOR_KEY --config worker/wrangler.toml
+# For `wrangler dev`, put AGGREGATOR_KEY=0x... in worker/.dev.vars (git-ignored).
 [vars]
 RPC_URL = "https://testnet.ckb.dev/rpc"
 MIN_WITHDRAW_FEE = "200000"
@@ -20,7 +28,12 @@ MIN_TIP = "1000000"
 MIN_BLOCKS_LEFT = "10"
 MAX_WITHDRAWALS = "4"
 MAX_INTENTS = "16"
+# The queue of withdrawals is listed on every LIST_EVERY-th minute: KV's free
+# plan allows 1,000 listings a day, and a day has 1,440 minutes. On the paid
+# plan this can be "1".
+LIST_EVERY = "2"
 
-# The aggregator's key is a secret, never a var:
-#   npx wrangler secret put AGGREGATOR_KEY --config worker/wrangler.toml
-# For `wrangler dev`, put AGGREGATOR_KEY=0x... in worker/.dev.vars (git-ignored).
+# Every run, what it logged and the CPU time it took, under the Worker's Logs
+# in the dashboard.
+[observability]
+enabled = true

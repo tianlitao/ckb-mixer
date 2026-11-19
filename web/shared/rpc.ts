@@ -38,6 +38,8 @@ export interface ChainTx {
 export class RpcError extends Error {}
 
 const PAGE = 100;
+/** Calls put in one batch request; more than this goes in several. */
+const BATCH = 50;
 
 export class Rpc {
   constructor(readonly url: string) {}
@@ -150,8 +152,33 @@ export class Rpc {
   }
 
   async transactions(hashes: string[]): Promise<(ChainTx | undefined)[]> {
-    const values = await this.batch(hashes.map((hash) => ({ method: "get_transaction", params: [hash] })));
-    return values.map(Rpc.chainTx);
+    const out: (ChainTx | undefined)[] = [];
+    for (let at = 0; at < hashes.length; at += BATCH) {
+      const calls = hashes.slice(at, at + BATCH).map((hash) => ({ method: "get_transaction", params: [hash] }));
+      out.push(...(await this.batch(calls)).map(Rpc.chainTx));
+    }
+    return out;
+  }
+
+  /**
+   * The transactions that had a cell with this type script among their inputs
+   * or outputs, newest first, down to `until` (left out) if it is one of them.
+   */
+  async typeHistory(script: ScriptJson, until?: string): Promise<string[]> {
+    const key = { script, script_type: "type", script_search_mode: "exact", group_by_transaction: true };
+    const hashes: string[] = [];
+    let cursor: string | undefined;
+    for (;;) {
+      const params: unknown[] = [key, "desc", hexNum(PAGE)];
+      if (cursor) params.push(cursor);
+      const page = await this.call("get_transactions", params);
+      for (const object of page.objects) {
+        if (object.tx_hash === until) return hashes;
+        hashes.push(object.tx_hash);
+      }
+      if (page.objects.length < PAGE) return hashes;
+      cursor = page.last_cursor;
+    }
   }
 
   /** Only the status of a transaction: `unknown` if the node has none. */
