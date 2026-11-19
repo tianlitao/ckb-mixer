@@ -48,6 +48,12 @@ export const SHANNONS = 100_000_000n;
 /** What a withdrawal offers whoever sends it, by default: 0.01 CKB. */
 export const DEFAULT_WITHDRAW_FEE = 1_000_000n;
 
+/** The tip an intent offers the aggregator on the demo page: 0.1 CKB. */
+export const DEFAULT_TIP = 10_000_000n;
+
+/** How many blocks an intent waits before it can be reclaimed: about 4 minutes. */
+export const DEFAULT_WAIT = 30n;
+
 /** Fee rate this code pays, in shannons per 1000 bytes of weight. */
 export const FEE_RATE = 5000n;
 

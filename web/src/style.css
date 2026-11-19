@@ -174,21 +174,6 @@ input {
   position: relative;
 }
 
-.connect-manage {
-  all: unset;
-  cursor: pointer;
-  font-size: 12.5px;
-  font-weight: 560;
-  color: var(--ink-soft);
-  border-bottom: 1px solid var(--hair-strong);
-  padding-bottom: 1px;
-}
-
-.connect-manage:hover {
-  color: var(--ink);
-  border-bottom-color: var(--ink);
-}
-
 .connect {
   all: unset;
   display: inline-flex;
@@ -394,49 +379,6 @@ input {
 
 .readout-foot.bad {
   color: var(--warn);
-}
-
-.demo-key {
-  margin-bottom: 18px;
-}
-
-.demo-key summary {
-  cursor: pointer;
-  font-size: 12.5px;
-  color: var(--muted);
-  list-style: none;
-  width: fit-content;
-  transition: color 140ms var(--ease);
-}
-
-.demo-key summary:hover {
-  color: var(--ink);
-}
-
-.demo-key summary::marker,
-.demo-key summary::-webkit-details-marker {
-  display: none;
-}
-
-.demo-key summary::before {
-  content: "+";
-  font-family: var(--mono);
-  font-size: 11px;
-  margin-right: 7px;
-  color: var(--pool);
-}
-
-.demo-key[open] summary::before {
-  content: "−";
-}
-
-.demo-key .flow-actions {
-  margin: 12px 0 6px;
-}
-
-.demo-key p.muted {
-  font-size: 12px;
-  margin: 0;
 }
 
 .wallet-badge {
@@ -811,6 +753,57 @@ input.grow {
   color: var(--pool-ink);
   user-select: all;
   margin-bottom: 14px;
+}
+
+/* ---- the receipt after a signature ------------------------------------- */
+
+.receipt {
+  margin: clamp(18px, 2.4vw, 26px) 0 -18px;
+  padding: 16px 18px 15px;
+  background: var(--pool-tint);
+  border-left: 3px solid var(--pool);
+  animation: rise 240ms var(--ease);
+}
+
+.receipt-title {
+  margin: 0 0 4px;
+  font-weight: 640;
+  letter-spacing: -0.015em;
+  font-size: 16px;
+  color: var(--pool-ink);
+}
+
+.receipt-line {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  max-width: 62ch;
+}
+
+.receipt-line a {
+  color: var(--pool-ink);
+}
+
+.receipt-hint {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+/* the two numbers a deposit no longer asks for */
+.terms {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: -0.005em;
+}
+
+.terms span {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: var(--ink-soft);
 }
 
 /* ---- notes, as a ledger ----------------------------------------------- */

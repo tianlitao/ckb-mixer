@@ -52,6 +52,12 @@
         <button role="tab" id="tab-activity" aria-controls="panel-activity" aria-selected="false">动作</button>
       </nav>
 
+      <div id="receipt" class="receipt" hidden aria-live="polite">
+        <p class="receipt-title">意向已签名</p>
+        <p class="receipt-line" id="receipt-line"></p>
+        <p class="receipt-hint">聚合者会把它和别人的一起成交进池子；没人成交的话，等待期过后你可以撤回。</p>
+      </div>
+
       <main>
         <section id="panel-deposit" class="panel" role="tabpanel" aria-labelledby="tab-deposit">
           <div id="wallet-badge" class="wallet-badge" hidden>
@@ -64,18 +70,9 @@
               聚合者把它和别人的一起成交进池子——你签一次名，之后不需要在线。
             </p>
             <p class="muted">
-              没有人来成交的话，等过你定的区块数，同一笔钱可以原样撤回。取款不需要这个钱包，也不需要事先有 CKB。
+              没有人来成交的话，等过 <span id="lede-wait">30</span> 个区块，同一笔钱可以原样撤回。取款不需要这个钱包，也不需要事先有 CKB。
             </p>
           </div>
-
-          <details class="demo-key">
-            <summary>没有钱包扩展？用一把一次性的测试网私钥</summary>
-            <div class="flow-actions">
-              <input id="demo-key" class="grow" type="password" placeholder="0x 加 64 位十六进制" autocomplete="off" spellcheck="false" />
-              <button id="use-demo-key" type="button">使用</button>
-            </div>
-            <p class="muted">只为了在演示页上试。密钥只在这个标签页的内存里，刷新即忘，不发往任何地方。</p>
-          </details>
 
           <div class="flow" id="deposit-flow">
             <div class="flow-actions">
@@ -97,14 +94,9 @@
             </div>
 
             <form id="deposit-form" class="fields" onsubmit="return false">
-              <label class="field">
-                <span>小费</span>
-                <span class="amount"><input id="tip" value="0.1" inputmode="decimal" /> <small>CKB</small></span>
-              </label>
-              <label class="field">
-                <span>可撤回前等待</span>
-                <span class="amount"><input id="wait" value="30" inputmode="numeric" /> <small>个区块</small></span>
-              </label>
+              <p class="terms">
+                每笔存款 = 面额 150 CKB + 小费 <span id="terms-tip">0.1</span> CKB，等待 <span id="terms-wait">30</span> 个区块后可撤回。
+              </p>
               <label class="confirm">
                 <input id="backed-up" type="checkbox" />
                 <span>票据已经保存到别处</span>

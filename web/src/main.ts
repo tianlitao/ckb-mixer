@@ -3,7 +3,7 @@ import "@ckb-ccc/connector";
 import type { ConnectorConnection, ConnectorConnectionEvent, SelectClientEvent, WebComponentConnector } from "@ckb-ccc/connector";
 import * as snarkjs from "snarkjs";
 import initWasm, { ckb_hash, nullifier_hash, proof_from_snarkjs, vk_from_snarkjs } from "../wasm/mixer_wasm.js";
-import { CHAIN, DEPS, DEFAULT_WITHDRAW_FEE, EXPLORER, FEE_RATE, LONGEST_WAIT, RPC_URL, type ScriptJson } from "../shared/config";
+import { CHAIN, DEPS, DEFAULT_TIP, DEFAULT_WAIT, DEFAULT_WITHDRAW_FEE, EXPLORER, FEE_RATE, RPC_URL, type ScriptJson } from "../shared/config";
 import { ckb, fromHex, parseCkb as readCkb, toHex } from "../shared/hex";
 import { intentArgs, liveIntents, scriptHash, syncPool, type Checkpoint, type IntentArgs, type Pool } from "../shared/pool";
 import { Rpc, type LiveCell } from "../shared/rpc";
@@ -238,8 +238,6 @@ function renderWallet() {
     button.dataset.state = open ? "open" : "closed";
     button.setAttribute("aria-expanded", String(open));
   }
-  const manage = document.querySelector(".connect-manage") as HTMLButtonElement | null;
-  if (manage) manage.hidden = !owner;
   const badge = $("wallet-badge");
   if (!badge) return;
   badge.hidden = !owner;
@@ -414,24 +412,6 @@ let connectionOwner: ccc.Owner<ConnectorConnection> | undefined;
 function wireConnect() {
   const mount = $("connect-mount");
 
-  // "Manage" in the connector's connected view leads here; it belongs to the
-  // app, not to the connector.
-  const manage = document.createElement("button");
-  manage.type = "button";
-  manage.className = "connect-manage";
-  manage.textContent = "私钥";
-  manage.title = "用一把一次性的测试网私钥（没有钱包扩展时）";
-  manage.hidden = true;
-  manage.addEventListener("click", () => {
-    connector && (connector.style.display = "none");
-    const details = document.querySelector(".demo-key") as HTMLDetailsElement | null;
-    if (details) details.open = true;
-    showTab("deposit");
-    $("demo-key").focus();
-    renderWallet();
-  });
-  mount.append(manage);
-
   const button = document.createElement("button");
   button.className = "connect";
   button.type = "button";
@@ -519,21 +499,10 @@ async function adopt(next: ccc.Signer, from: string) {
   render();
 }
 
-/** A one-off private key, for browsers without a wallet extension. Never persisted. */
-async function useDemoKey() {
-  const input = $("demo-key") as HTMLInputElement;
-  const key = input.value.trim();
-  if (!/^(0x)?[0-9a-fA-F]{64}$/.test(key)) throw new Error("私钥应当是 64 位十六进制");
-  input.value = "";
-  await adopt(new ccc.SignerCkbPrivateKey(client, key.startsWith("0x") ? key : `0x${key}`), "测试网私钥（演示）");
-}
-
 function openConnect() {
   if (!connector) return;
   connector.style.display = "";
   renderWallet();
-  // The connector draws itself; its own footer ("Manage") is the app's cue to
-  // show the demo-key entry it would otherwise never offer.
 }
 
 async function disconnect() {
@@ -549,14 +518,12 @@ async function disconnect() {
 
 async function deposit() {
   if (!fresh || !signer || !owner || !pool) throw new Error("先连接钱包并生成票据");
-  const tipShannons = parseCkb(($("tip") as HTMLInputElement).value);
-  const waitText = ($("wait") as HTMLInputElement).value.trim();
-  if (!/^\d+$/.test(waitText)) throw new Error("等待的区块数必须是整数");
-  const wait = BigInt(waitText);
-  // A number of blocks, never an encoded `since`: no script checks this when
-  // the cell is made, and a wait of 2^56 or more could never be reclaimed.
-  if (wait < 1n || wait > LONGEST_WAIT) throw new Error("等待的区块数必须在 1 到 2^56−1 之间");
-  if (wait > 200_000n && !confirm(`${wait} 个区块大约是 ${(Number(wait) * 8) / 86400} 天。没人成交的话要等这么久才能撤回，确定吗？`)) return;
+  // The demo page has one offer: the tip the aggregator asks for, and a wait
+  // long enough for a batch or two but short enough to reclaim the same day.
+  // (A number of blocks, never an encoded `since`: a wait of 2^56 or more
+  // could never be reclaimed.)
+  const tipShannons = DEFAULT_TIP;
+  const wait = DEFAULT_WAIT;
 
   const lock = newIntentLock(fromHex(fresh.commitment), owner.lock, wait);
   // Read the lock back the way the scripts will, before any money moves.
@@ -578,7 +545,17 @@ async function deposit() {
   update(note, { intent: { tx: hash, reclaimAfter: wait.toString() } });
   fresh = undefined;
   ($("backed-up") as HTMLInputElement).checked = false;
+  // Signing leaves the page without the wallet's own confirmation, so the
+  // receipt stays on the page until another note is started. Waiting is the
+  // honest state: the transaction is accepted by the node, not yet in a block.
+  const receipt = $("receipt");
+  receipt.hidden = false;
+  $("receipt-line").innerHTML =
+    `意向交易 ${txLink(hash)} 已交给节点，正在等它进入区块。` +
+    `${ckb(capacity)} CKB 锁在里面，${wait} 个区块后可撤回；聚合者成交后，票据在「票据」里会变成「在池中」。`;
   log(`意向已创建 ${txLink(hash)}：${ckb(capacity)} CKB，${wait} 个区块后可撤回。`);
+  render();
+  receipt.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 // ---- reclaim
@@ -717,30 +694,28 @@ async function showAggregator() {
 // ---- start
 
 async function main() {
-  // The app's own "manage" page is a fragment; every other one is left over
-  // from something that should not have written it.
-  if (location.hash && !location.hash.startsWith("#manage")) history.replaceState(null, "", location.pathname + location.search);
+  // Every fragment is left over from something that should not have written it.
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   await initWasm();
   wireTabs();
   wireConnect();
   render();
 
-  // The connector's connected view links to the app's own page for anything
-  // it does not manage: here, the one-off testnet key.
-  if (/^#manage/.test(location.hash)) {
-    const details = document.querySelector(".demo-key") as HTMLDetailsElement | null;
-    if (details) details.open = true;
-    showTab("deposit");
-  }
-
   ($("fee") as HTMLInputElement).value = ckb(DEFAULT_WITHDRAW_FEE);
+  $("terms-tip").textContent = ckb(DEFAULT_TIP);
+  $("terms-wait").textContent = DEFAULT_WAIT.toString();
+  $("lede-wait").textContent = DEFAULT_WAIT.toString();
   ($("fee") as HTMLInputElement).addEventListener("input", renderWithdraw);
 
   $("new-note").addEventListener("click", () => {
     if (fresh) return;
+    $("receipt").hidden = true;
     fresh = newNote();
     update(fresh, {});
-    ($("backed-up") as HTMLInputElement).checked = false;
+    // The point of the checkbox is that the person saw the note. A note that
+    // was just shown on this page has been seen; they can clear it if their
+    // backup is only in a tab they do not trust.
+    ($("backed-up") as HTMLInputElement).checked = true;
     render();
     $("backup")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   });
@@ -781,7 +756,6 @@ async function main() {
     log("票据已导入。");
   });
   $("disconnect").addEventListener("click", () => void disconnect());
-  action($("use-demo-key") as HTMLButtonElement, useDemoKey);
   const proveButton = $("prove") as HTMLButtonElement;
   action(proveButton, () => prove(proveButton));
   action($("to-aggregator") as HTMLButtonElement, toAggregator);
