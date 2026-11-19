@@ -680,6 +680,15 @@ async function prove(button: HTMLButtonElement) {
 
 const aggregatorUrl = () => (localStorage.getItem(AGGREGATOR) ?? DEFAULT_AGGREGATOR).replace(/\/+$/, "");
 
+/** The aggregator's host as the page shows it: same origin when it is proxied. */
+function aggregatorHost(): string {
+  try {
+    return new URL(aggregatorUrl(), location.origin).host;
+  } catch {
+    return aggregatorUrl();
+  }
+}
+
 async function toAggregator() {
   if (!withdrawing?.message) return;
   const { note, message } = withdrawing;
@@ -727,7 +736,7 @@ async function showAggregator() {
     const info: any = await (await fetch(`${aggregatorUrl()}/info`)).json();
     if (info.error) throw new Error(info.error);
     log("aggregator.online", {
-      host: escape(new URL(aggregatorUrl()).host),
+      host: escape(aggregatorHost()),
       fee: ckb(BigInt(info.min_withdraw_fee)),
       tip: ckb(BigInt(info.min_tip)),
     });
