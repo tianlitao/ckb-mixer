@@ -95,7 +95,7 @@ Cloudflare 现在把 Pages 并进了 Workers：新建的 `wrangler pages project
 npm run pages:deploy
 ```
 
-两条构建不能换着部署：workers.dev 那份是纯静态资源，没有 Function，`/aggregator/*` 会 404，所以那个站点必须用绝对 URL 构建（`npm run build:web`，或照上面的 `VITE_AGGREGATOR_URL=… npm run build`）；Pages 那份用 `npm run build:pages`（地址是 `/aggregator`）。`dist/` 只有一份，所以 `pages:deploy` 会自己先构建；往 workers.dev 部署前要重新 `build:web`，否则会把带 `_worker.js` 的 Pages 产物当静态资源传上去。
+两条构建不能换着部署：workers.dev 那份是纯静态资源，没有 Function，`/aggregator/*` 会 404，所以那个站点必须用绝对 URL 构建（`npm run build:web`，或照上面的 `VITE_AGGREGATOR_URL=… npm run build`）；Pages 那份用 `npm run build:pages`（地址是 `/aggregator`）。`dist/` 只有一份，所以 `pages:deploy` 会自己先构建；往 workers.dev 部署前要重新 `build:web`，它建完会把 `dist/_worker.js` 删掉，那个站点的产物里不留 Function。
 
 advanced mode 下所有请求都过 Function（静态资源也一样），免费档每天 100,000 次调用；页面只有三个文件、走缓存，正常访问远用不到。
 

@@ -12,7 +12,7 @@
     "worker:deploy": "wrangler deploy --config worker/wrangler.toml",
     "web:deploy": "wrangler deploy --config deploy/wrangler.toml",
     "build:pages": "VITE_AGGREGATOR_URL=/aggregator npm run build",
-    "build:web": "VITE_AGGREGATOR_URL=https://ckb-mixer-aggregator.tianlitao3399.workers.dev npm run build",
+    "build:web": "VITE_AGGREGATOR_URL=https://ckb-mixer-aggregator.tianlitao3399.workers.dev npm run build && rm -f dist/_worker.js",
     "pages:deploy": "npm run build:pages && wrangler pages deploy dist --project-name ckb-mixer-web",
     "sync": "tsx scripts/sync.ts"
   },
