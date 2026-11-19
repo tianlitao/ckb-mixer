@@ -3,113 +3,201 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
     <title>CKB 混币池 v2 · 测试网演示</title>
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header>
-      <h1>CKB 混币池 v2 <span class="tag">测试网演示</span></h1>
-      <p class="warning">
-        <strong>仅限 CKB 测试网。</strong>这个池子的可信设置是开发用的（单人生成，没有仪式），合约和这个页面都未经审计。
-        不要在这里放任何有价值的东西，也不要把它指向主网。
-      </p>
-    </header>
-
-    <main>
-      <section>
-        <h2>池子</h2>
-        <div id="pool" class="grid">正在从链上重放池子…</div>
-      </section>
-
-      <section>
-        <h2>钱包</h2>
-        <p class="hint">存款和撤回需要钱包签名；取款不需要钱包，也不需要事先有 CKB。</p>
-        <div id="wallet"></div>
-        <div id="wallets" class="row"></div>
-        <details>
-          <summary>用测试网私钥（只放在这个页面的内存里，刷新即忘）</summary>
-          <div class="row">
-            <input id="key" type="password" placeholder="0x… 64 位十六进制的测试网私钥" autocomplete="off" spellcheck="false" />
-            <button id="use-key">使用</button>
-          </div>
-          <p class="hint">只为了在测试网上演示。永远不要在网页里输入有真实资产的私钥。</p>
-        </details>
-      </section>
-
-      <section>
-        <h2>存款</h2>
-        <p class="hint">
-          存款不直接进池子：你先建一个“意向”cell（面额 + 给聚合者的小费），聚合者把它和别人的一起成交进池子。
-          没人成交的话，等待期过后你可以原样取回。
-        </p>
-        <div class="row">
-          <label>小费 (CKB) <input id="tip" value="0.1" inputmode="decimal" /></label>
-          <label>多少个区块后可撤回 <input id="wait" value="30" inputmode="numeric" /></label>
-          <button id="new-note">生成票据</button>
+    <div class="grain" aria-hidden="true"></div>
+    <div class="sheet">
+      <header class="masthead">
+        <div class="brand">
+          <a class="wordmark" href="/" aria-label="CKB 混币池 v2">
+            <span class="wordmark-fill">ckb</span><span class="wordmark-line">mixer</span><sup>v2</sup>
+          </a>
+          <p class="testnet-note">测试网 · 无署名 · 无仪式</p>
         </div>
-        <div id="backup" hidden>
-          <p class="warning">
-            <strong>先备份这张票据，再签名。</strong>取款只凭它；丢了，这笔钱谁也取不出来。它只存在这个浏览器的本地存储里，不会上传到任何地方。
+        <div class="connect-mount" id="connect-mount"></div>
+      </header>
+
+      <article class="hero">
+        <div class="hero-copy">
+          <h1 aria-label="存款时留下名字以外的什么，取款时什么也不留。">
+            <span class="line" style="--i: 0"><span class="ink-solid">存款时留下</span></span>
+            <span class="line" style="--i: 1"><span class="ink-out">名字以外的什么</span></span>
+            <span class="line" style="--i: 2"><span class="ink-solid">取款时什么</span></span>
+            <span class="line" style="--i: 3"><span class="ink-out">也不留</span></span>
+          </h1>
+          <p class="hero-note">
+            一笔存款就是一张<b>票据</b>：两张随机数，从不和钱一起出现。取款时池子只看见一张有效的证明，
+            看不出钱从哪来、进过谁的手。
           </p>
-          <textarea id="backup-note" readonly rows="3"></textarea>
-          <div class="row">
-            <button id="copy-note">复制</button>
-            <button id="download-note">下载为文件</button>
-            <label class="check"><input id="backed-up" type="checkbox" /> 我已经把票据保存到别处</label>
-            <button id="deposit" class="primary" disabled>签名并创建意向</button>
-            <button id="cancel-note">放弃这张票据</button>
+        </div>
+        <div class="readout">
+          <p class="readout-title">池子此刻</p>
+          <dl aria-live="polite">
+            <div><dt>已存入</dt><dd id="o-deposits">—</dd></div>
+            <div><dt>已取出</dt><dd id="o-withdrawals">—</dd></div>
+            <div><dt>未取</dt><dd id="o-open">—</dd></div>
+            <div><dt>池内</dt><dd><span id="o-capacity">—</span> <small>CKB</small></dd></div>
+          </dl>
+          <p class="readout-foot" id="o-verified">正在从链上重放池子…</p>
+        </div>
+      </article>
+
+      <nav class="tabs" role="tablist" aria-label="操作">
+        <button role="tab" id="tab-deposit" aria-controls="panel-deposit" aria-selected="true">存款</button>
+        <button role="tab" id="tab-notes" aria-controls="panel-notes" aria-selected="false">票据</button>
+        <button role="tab" id="tab-pool" aria-controls="panel-pool" aria-selected="false">池子</button>
+        <button role="tab" id="tab-activity" aria-controls="panel-activity" aria-selected="false">动作</button>
+      </nav>
+
+      <main>
+        <section id="panel-deposit" class="panel" role="tabpanel" aria-labelledby="tab-deposit">
+          <div id="wallet-badge" class="wallet-badge" hidden>
+            <span>以 <span class="mono"></span> 的身份存款</span>
+            <button id="disconnect" class="link-button" type="button">断开</button>
           </div>
-        </div>
-      </section>
-
-      <section>
-        <h2>我的票据</h2>
-        <div id="notes"></div>
-        <details>
-          <summary>导入票据</summary>
-          <div class="row">
-            <input id="import-note" placeholder="ckbmix2-testnet-…" autocomplete="off" spellcheck="false" />
-            <button id="import">导入</button>
+          <div class="lede">
+            <p>
+              存款先进一个只认你、也只认这个池子的<strong>意向 cell</strong>：面额 150 CKB 加上给聚合者的小费。
+              聚合者把它和别人的一起成交进池子——你签一次名，之后不需要在线。
+            </p>
+            <p class="muted">
+              没有人来成交的话，等过你定的区块数，同一笔钱可以原样撤回。取款不需要这个钱包，也不需要事先有 CKB。
+            </p>
           </div>
-        </details>
-      </section>
 
-      <section id="withdraw" hidden>
-        <h2>取款</h2>
-        <p class="hint" id="withdraw-note"></p>
-        <div class="row">
-          <label class="wide">收款地址（测试网）<input id="recipient" placeholder="ckt1…" autocomplete="off" spellcheck="false" /></label>
-          <label>手续费 (CKB) <input id="fee" value="0.01" inputmode="decimal" /></label>
-        </div>
-        <p class="hint">
-          收款地址到手 = 面额 − 手续费。证明在这个浏览器里生成，票据的秘密不离开这里；证明绑定了收款地址和手续费，别人改不了。
+          <details class="demo-key">
+            <summary>没有钱包扩展？用一把一次性的测试网私钥</summary>
+            <div class="flow-actions">
+              <input id="demo-key" class="grow" type="password" placeholder="0x 加 64 位十六进制" autocomplete="off" spellcheck="false" />
+              <button id="use-demo-key" type="button">使用</button>
+            </div>
+            <p class="muted">只为了在演示页上试。密钥只在这个标签页的内存里，刷新即忘，不发往任何地方。</p>
+          </details>
+
+          <div class="flow" id="deposit-flow">
+            <div class="flow-actions">
+              <button id="new-note" class="primary">生成票据</button>
+              <button id="open-import" class="quiet">导入已有的票据</button>
+            </div>
+
+            <div id="backup" class="backup" hidden>
+              <p class="backup-title">先备份，再签名</p>
+              <p class="muted">
+                取款只凭这张票据，它没有经过任何服务器。丢了它，这笔钱谁也取不出来——包括你。
+              </p>
+              <output id="backup-note" class="note-string" tabindex="0"></output>
+              <div class="flow-actions">
+                <button id="copy-note">复制</button>
+                <button id="download-note">下载为文件</button>
+                <button id="cancel-note" class="quiet">放弃这张</button>
+              </div>
+            </div>
+
+            <form id="deposit-form" class="fields" onsubmit="return false">
+              <label class="field">
+                <span>小费</span>
+                <span class="amount"><input id="tip" value="0.1" inputmode="decimal" /> <small>CKB</small></span>
+              </label>
+              <label class="field">
+                <span>可撤回前等待</span>
+                <span class="amount"><input id="wait" value="30" inputmode="numeric" /> <small>个区块</small></span>
+              </label>
+              <label class="confirm">
+                <input id="backed-up" type="checkbox" />
+                <span>票据已经保存到别处</span>
+              </label>
+              <button id="deposit" class="primary" disabled>签名，创建意向</button>
+            </form>
+          </div>
+
+          <div id="import" class="flow" hidden>
+            <p class="muted">粘贴一张票据。它会留在这个浏览器的本地存储里。</p>
+            <div class="flow-actions">
+              <input id="import-note" class="grow" placeholder="ckbmix2-testnet-…" autocomplete="off" spellcheck="false" />
+              <button id="import-note-button">导入</button>
+              <button id="close-import" class="quiet">取消</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="panel-notes" class="panel" role="tabpanel" aria-labelledby="tab-notes" hidden>
+          <div class="lede">
+            <p class="muted">存在这个浏览器里的票据。连接创建它时的钱包，才能撤回或用作意向的所有者。</p>
+          </div>
+          <ol id="notes-list" class="notes"></ol>
+        </section>
+
+        <section id="panel-pool" class="panel" role="tabpanel" aria-labelledby="tab-pool" hidden>
+          <div class="lede">
+            <p>
+              v2 的池子 cell 只有一个。每次批量结算由意向成交和取款一起花掉它，吐出新的状态——
+              池子不记谁存了、谁取了，只记承诺和已经用过的 nullifier。
+            </p>
+          </div>
+          <dl id="pool-facts" class="facts"></dl>
+          <div class="verify">
+            <p class="verify-title">本页的独立性</p>
+            <p class="muted" id="pool-check">
+              本页从创建交易起重放池子的每一笔交易，重放结果必须和链上 cell 的数据、容量逐字节一致，否则不动手。
+            </p>
+          </div>
+        </section>
+
+        <section id="panel-activity" class="panel" role="tabpanel" aria-labelledby="tab-activity" hidden>
+          <div class="lede">
+            <p class="muted">这个页面做过的事，最近的在前。交易都在浏览器里重新构造，没有转发给任何服务。</p>
+          </div>
+          <div id="log" class="log" aria-live="polite"></div>
+        </section>
+      </main>
+
+      <footer class="colophon">
+        <p>
+          可信设置是本机生成的、一次性的，没有仪式，也没有审计。合约、页面和聚合者都只用于演示；
+          不要往这里放任何有价值的东西，也不要把它指向主网。
         </p>
-        <div class="row">
-          <button id="prove" class="primary">生成证明</button>
-          <button id="to-aggregator" disabled>交给聚合者</button>
-          <button id="send-self" disabled>自己发送（保底）</button>
-          <button id="close-withdraw">关闭</button>
-        </div>
-        <p class="hint">
-          “交给聚合者”：聚合者把它和别的存取款打包，手续费归聚合者。“自己发送”：只含这一笔取款的交易，不需要签名，手续费归矿工——聚合者不理你时用它。
-        </p>
-        <pre id="message" hidden></pre>
-      </section>
+        <p class="muted">池 <span class="mono" id="f-type">—</span> · 面额 <span id="f-denomination">—</span> · 根 <span class="mono" id="f-root">—</span> · 高 <span id="f-tip">—</span></p>
+      </footer>
+    </div>
 
-      <section>
-        <h2>聚合者</h2>
-        <div class="row">
-          <label class="wide">地址 <input id="aggregator" autocomplete="off" spellcheck="false" /></label>
-          <button id="save-aggregator">保存</button>
-        </div>
-        <div id="aggregator-info" class="hint"></div>
-      </section>
+    <!-- The withdrawal flow: one modal, the whole story of a note at a time. -->
+    <dialog id="withdraw" class="withdraw-modal">
+      <button id="close-withdraw" type="button" class="modal-close" aria-label="关闭">关闭</button>
+      <p class="modal-kicker">取款</p>
+      <h2 id="withdraw-title" class="modal-title">票据</h2>
+      <p class="muted" id="withdraw-note"></p>
 
-      <section>
-        <h2>记录</h2>
-        <div id="log"></div>
-      </section>
-    </main>
+      <div class="fields">
+        <label class="field">
+          <span>收款地址</span>
+          <input id="recipient" class="grow" placeholder="ckt1…" autocomplete="off" spellcheck="false" />
+        </label>
+        <label class="field">
+          <span>手续费</span>
+          <span class="amount"><input id="fee" value="0.01" inputmode="decimal" /> <small>CKB</small></span>
+        </label>
+      </div>
+      <p class="muted">
+        收款地址到手 = 面额 − 手续费。证明在这个浏览器里生成，票据的秘密不离开这里；
+        证明绑定了收款地址和手续费，聚合者改不了。
+      </p>
+      <div class="flow-actions">
+        <button id="prove" class="primary">生成证明</button>
+        <button id="to-aggregator" disabled>交给聚合者</button>
+        <button id="send-self" disabled>自己发送（保底）</button>
+      </div>
+      <p class="muted">
+        “交给聚合者”会把它和别人的存取款打包，手续费归聚合者；“自己发送”是不带签名的单笔交易，手续费归矿工——
+        聚合者不理你时用它。
+      </p>
+      <details class="raw">
+        <summary>取款消息</summary>
+        <pre id="message"></pre>
+      </details>
+    </dialog>
 
     <script type="module" src="/src/main.ts"></script>
   </body>
