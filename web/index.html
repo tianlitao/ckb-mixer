@@ -12,127 +12,136 @@
     <div class="sheet">
       <header class="masthead">
         <div class="brand">
-          <a class="wordmark" href="/" aria-label="CKB 混币池 v2">
+          <a class="wordmark" href="/" data-i18n-label="brand.home">
             <span class="wordmark-fill">ckb</span><span class="wordmark-line">mixer</span><sup>v2</sup>
           </a>
-          <p class="testnet-note">测试网 · 无署名 · 无仪式</p>
+          <p class="testnet-note" data-i18n="brand.testnet">测试网 · 无署名 · 无仪式</p>
         </div>
-        <div class="connect-mount" id="connect-mount"></div>
+        <div class="masthead-tools">
+          <div class="lang" role="group" data-i18n-label="lang.label">
+            <button type="button" data-lang="zh" aria-pressed="true" lang="zh-CN">中文</button>
+            <button type="button" data-lang="en" aria-pressed="false" lang="en">EN</button>
+          </div>
+          <div class="connect-mount" id="connect-mount"></div>
+        </div>
       </header>
 
       <article class="hero">
         <div class="hero-copy">
-          <h1 aria-label="存款时留下一张票据，取款时什么都不留。">
-            <span class="line" style="--i: 0"><span class="ink-solid">存款时留下</span></span>
-            <span class="line" style="--i: 1"><span class="ink-out">一张票据</span></span>
-            <span class="line" style="--i: 2"><span class="ink-solid">取款时</span></span>
-            <span class="line" style="--i: 3"><span class="ink-out">什么都不留</span></span>
+          <h1 data-i18n-label="hero.a11y">
+            <span class="line" style="--i: 0"><span class="ink-solid" data-i18n="hero.l1">存款时留下</span></span>
+            <span class="line" style="--i: 1"><span class="ink-out" data-i18n="hero.l2">一张票据</span></span>
+            <span class="line" style="--i: 2"><span class="ink-solid" data-i18n="hero.l3">取款时</span></span>
+            <span class="line" style="--i: 3"><span class="ink-out" data-i18n="hero.l4">什么都不留</span></span>
           </h1>
-          <p class="hero-note">
+          <p class="hero-note" data-i18n-html="hero.note">
             一笔存款就是一张<b>票据</b>：两张随机数，从不和钱一起出现。取款时池子只看见一张有效的证明，
             看不出钱从哪来、进过谁的手。
           </p>
         </div>
         <div class="readout">
-          <p class="readout-title">池子此刻</p>
+          <p class="readout-title" data-i18n="readout.title">池子此刻</p>
           <dl aria-live="polite">
-            <div><dt>已存入</dt><dd id="o-deposits">—</dd></div>
-            <div><dt>已取出</dt><dd id="o-withdrawals">—</dd></div>
-            <div><dt>未取</dt><dd id="o-open">—</dd></div>
-            <div><dt>池内</dt><dd><span id="o-capacity">—</span> <small>CKB</small></dd></div>
+            <div><dt data-i18n="readout.deposits">已存入</dt><dd id="o-deposits">—</dd></div>
+            <div><dt data-i18n="readout.withdrawals">已取出</dt><dd id="o-withdrawals">—</dd></div>
+            <div><dt data-i18n="readout.open">未取</dt><dd id="o-open">—</dd></div>
+            <div><dt data-i18n="readout.pool">池内</dt><dd><span id="o-capacity">—</span> <small>CKB</small></dd></div>
           </dl>
-          <p class="readout-foot" id="o-verified">正在从链上重放池子…</p>
+          <p class="readout-foot" id="o-verified" data-i18n="readout.replaying">正在从链上重放池子…</p>
         </div>
       </article>
 
-      <nav class="tabs" role="tablist" aria-label="操作">
-        <button role="tab" id="tab-deposit" aria-controls="panel-deposit" aria-selected="true">存款</button>
-        <button role="tab" id="tab-notes" aria-controls="panel-notes" aria-selected="false">票据</button>
-        <button role="tab" id="tab-pool" aria-controls="panel-pool" aria-selected="false">池子</button>
-        <button role="tab" id="tab-activity" aria-controls="panel-activity" aria-selected="false">动作</button>
+      <nav class="tabs" role="tablist" data-i18n-label="tabs.label">
+        <button role="tab" id="tab-deposit" aria-controls="panel-deposit" aria-selected="true" data-i18n="tab.deposit">存款</button>
+        <button role="tab" id="tab-notes" aria-controls="panel-notes" aria-selected="false" data-i18n="tab.notes">票据</button>
+        <button role="tab" id="tab-pool" aria-controls="panel-pool" aria-selected="false" data-i18n="tab.pool">池子</button>
+        <button role="tab" id="tab-activity" aria-controls="panel-activity" aria-selected="false" data-i18n="tab.activity">动作</button>
       </nav>
 
       <div id="receipt" class="receipt" hidden aria-live="polite">
-        <p class="receipt-title">意向已签名</p>
+        <p class="receipt-title" data-i18n="receipt.title">意向已签名</p>
         <p class="receipt-line" id="receipt-line"></p>
-        <p class="receipt-hint">聚合者会把它和别人的一起成交进池子；没人成交的话，等待期过后你可以撤回。</p>
+        <p class="receipt-hint" data-i18n="receipt.hint">聚合者会把它和别人的一起成交进池子；没人成交的话，等待期过后你可以撤回。</p>
       </div>
 
       <main>
         <section id="panel-deposit" class="panel" role="tabpanel" aria-labelledby="tab-deposit">
           <div id="wallet-badge" class="wallet-badge" hidden>
-            <span>以 <span class="mono"></span> 的身份存款</span>
-            <button id="disconnect" class="link-button" type="button">断开</button>
+            <span
+              ><span data-i18n="deposit.asPrefix">以</span> <span class="mono"></span>
+              <span data-i18n="deposit.asSuffix">的身份存款</span></span
+            >
+            <button id="disconnect" class="link-button" type="button" data-i18n="deposit.disconnect">断开</button>
           </div>
           <div class="lede">
-            <p>
+            <p data-i18n-html="deposit.lede1">
               存款先进一个只认你、也只认这个池子的<strong>意向 cell</strong>：面额 150 CKB 加上给聚合者的小费。
               聚合者把它和别人的一起成交进池子——你签一次名，之后不需要在线。
             </p>
-            <p class="muted">
-              没有人来成交的话，等过 <span id="lede-wait">30</span> 个区块，同一笔钱可以原样撤回。取款不需要这个钱包，也不需要事先有 CKB。
+            <p class="muted" data-i18n-html="deposit.lede2">
+              没有人来成交的话，等过 30 个区块，同一笔钱可以原样撤回。取款不需要这个钱包，也不需要事先有 CKB。
             </p>
           </div>
 
           <div class="flow" id="deposit-flow">
             <div class="flow-actions">
-              <button id="new-note" class="primary">生成票据</button>
-              <button id="open-import" class="quiet">导入已有的票据</button>
+              <button id="new-note" class="primary" data-i18n="deposit.newNote">生成票据</button>
+              <button id="open-import" class="quiet" data-i18n="deposit.import">导入已有的票据</button>
             </div>
 
             <div id="backup" class="backup" hidden>
-              <p class="backup-title">先备份，再签名</p>
-              <p class="muted">
+              <p class="backup-title" data-i18n="deposit.backupTitle">先备份，再签名</p>
+              <p class="muted" data-i18n="deposit.backupBody">
                 取款只凭这张票据，它没有经过任何服务器。丢了它，这笔钱谁也取不出来——包括你。
               </p>
               <output id="backup-note" class="note-string" tabindex="0"></output>
               <div class="flow-actions">
-                <button id="copy-note">复制</button>
-                <button id="download-note">下载为文件</button>
-                <button id="cancel-note" class="quiet">放弃这张</button>
+                <button id="copy-note" data-i18n="deposit.copy">复制</button>
+                <button id="download-note" data-i18n="deposit.download">下载为文件</button>
+                <button id="cancel-note" class="quiet" data-i18n="deposit.discard">放弃这张</button>
               </div>
             </div>
 
             <form id="deposit-form" class="fields" onsubmit="return false">
-              <p class="terms">
-                每笔存款 = 面额 150 CKB + 小费 <span id="terms-tip">0.1</span> CKB，等待 <span id="terms-wait">30</span> 个区块后可撤回。
+              <p class="terms" data-i18n-html="deposit.terms">
+                每笔存款 = 面额 150 CKB + 小费 <span>0.1</span> CKB，等待 <span>30</span> 个区块后可撤回。
               </p>
               <label class="confirm">
                 <input id="backed-up" type="checkbox" />
-                <span>票据已经保存到别处</span>
+                <span data-i18n="deposit.backedUp">票据已经保存到别处</span>
               </label>
-              <button id="deposit" class="primary" disabled>签名，创建意向</button>
+              <button id="deposit" class="primary" disabled data-i18n="deposit.sign">签名，创建意向</button>
             </form>
           </div>
 
           <div id="import" class="flow" hidden>
-            <p class="muted">粘贴一张票据。它会留在这个浏览器的本地存储里。</p>
+            <p class="muted" data-i18n="deposit.importHint">粘贴一张票据。它会留在这个浏览器的本地存储里。</p>
             <div class="flow-actions">
               <input id="import-note" class="grow" placeholder="ckbmix2-testnet-…" autocomplete="off" spellcheck="false" />
-              <button id="import-note-button">导入</button>
-              <button id="close-import" class="quiet">取消</button>
+              <button id="import-note-button" data-i18n="deposit.importButton">导入</button>
+              <button id="close-import" class="quiet" data-i18n="deposit.cancel">取消</button>
             </div>
           </div>
         </section>
 
         <section id="panel-notes" class="panel" role="tabpanel" aria-labelledby="tab-notes" hidden>
           <div class="lede">
-            <p class="muted">存在这个浏览器里的票据。连接创建它时的钱包，才能撤回或用作意向的所有者。</p>
+            <p class="muted" data-i18n="notes.lede">存在这个浏览器里的票据。连接创建它时的钱包，才能撤回或用作意向的所有者。</p>
           </div>
           <ol id="notes-list" class="notes"></ol>
         </section>
 
         <section id="panel-pool" class="panel" role="tabpanel" aria-labelledby="tab-pool" hidden>
           <div class="lede">
-            <p>
+            <p data-i18n="pool.lede">
               v2 的池子 cell 只有一个。每次批量结算由意向成交和取款一起花掉它，吐出新的状态——
               池子不记谁存了、谁取了，只记承诺和已经用过的 nullifier。
             </p>
           </div>
           <dl id="pool-facts" class="facts"></dl>
           <div class="verify">
-            <p class="verify-title">本页的独立性</p>
-            <p class="muted" id="pool-check">
+            <p class="verify-title" data-i18n="pool.verifyTitle">本页的独立性</p>
+            <p class="muted" id="pool-check" data-i18n="pool.verifyBody">
               本页从创建交易起重放池子的每一笔交易，重放结果必须和链上 cell 的数据、容量逐字节一致，否则不动手。
             </p>
           </div>
@@ -140,53 +149,58 @@
 
         <section id="panel-activity" class="panel" role="tabpanel" aria-labelledby="tab-activity" hidden>
           <div class="lede">
-            <p class="muted">这个页面做过的事，最近的在前。交易都在浏览器里重新构造，没有转发给任何服务。</p>
+            <p class="muted" data-i18n="activity.lede">这个页面做过的事，最近的在前。交易都在浏览器里重新构造，没有转发给任何服务。</p>
           </div>
           <div id="log" class="log" aria-live="polite"></div>
         </section>
       </main>
 
       <footer class="colophon">
-        <p>
+        <p data-i18n="colophon.body">
           可信设置是本机生成的、一次性的，没有仪式，也没有审计。合约、页面和聚合者都只用于演示；
           不要往这里放任何有价值的东西，也不要把它指向主网。
         </p>
-        <p class="muted">池 <span class="mono" id="f-type">—</span> · 面额 <span id="f-denomination">—</span> · 根 <span class="mono" id="f-root">—</span> · 高 <span id="f-tip">—</span></p>
+        <p class="muted">
+          <span data-i18n="colophon.pool">池</span> <span class="mono" id="f-type">—</span> ·
+          <span data-i18n="colophon.denomination">面额</span> <span id="f-denomination">—</span> ·
+          <span data-i18n="colophon.root">根</span> <span class="mono" id="f-root">—</span> ·
+          <span data-i18n="colophon.tip">高</span> <span id="f-tip">—</span>
+        </p>
       </footer>
     </div>
 
     <!-- The withdrawal flow: one modal, the whole story of a note at a time. -->
     <dialog id="withdraw" class="withdraw-modal">
-      <button id="close-withdraw" type="button" class="modal-close" aria-label="关闭">关闭</button>
-      <p class="modal-kicker">取款</p>
-      <h2 id="withdraw-title" class="modal-title">票据</h2>
+      <button id="close-withdraw" type="button" class="modal-close" data-i18n="withdraw.close" data-i18n-label="withdraw.close">关闭</button>
+      <p class="modal-kicker" data-i18n="withdraw.kicker">取款</p>
+      <h2 id="withdraw-title" class="modal-title" data-i18n="withdraw.title">票据</h2>
       <p class="muted" id="withdraw-note"></p>
 
       <div class="fields">
         <label class="field">
-          <span>收款地址</span>
+          <span data-i18n="withdraw.recipient">收款地址</span>
           <input id="recipient" class="grow" placeholder="ckt1…" autocomplete="off" spellcheck="false" />
         </label>
         <label class="field">
-          <span>手续费</span>
+          <span data-i18n="withdraw.fee">手续费</span>
           <span class="amount"><input id="fee" value="0.01" inputmode="decimal" /> <small>CKB</small></span>
         </label>
       </div>
-      <p class="muted">
+      <p class="muted" data-i18n="withdraw.body">
         收款地址到手 = 面额 − 手续费。证明在这个浏览器里生成，票据的秘密不离开这里；
         证明绑定了收款地址和手续费，聚合者改不了。
       </p>
       <div class="flow-actions">
-        <button id="prove" class="primary">生成证明</button>
-        <button id="to-aggregator" disabled>交给聚合者</button>
-        <button id="send-self" disabled>自己发送（保底）</button>
+        <button id="prove" class="primary" data-i18n="withdraw.prove">生成证明</button>
+        <button id="to-aggregator" disabled data-i18n="withdraw.toAggregator">交给聚合者</button>
+        <button id="send-self" disabled data-i18n="withdraw.self">自己发送（保底）</button>
       </div>
-      <p class="muted">
+      <p class="muted" data-i18n="withdraw.explain">
         “交给聚合者”会把它和别人的存取款打包，手续费归聚合者；“自己发送”是不带签名的单笔交易，手续费归矿工——
         聚合者不理你时用它。
       </p>
       <details class="raw">
-        <summary>取款消息</summary>
+        <summary data-i18n="withdraw.raw">取款消息</summary>
         <pre id="message"></pre>
       </details>
     </dialog>

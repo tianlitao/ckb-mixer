@@ -20,6 +20,7 @@ import {
   txWeight,
   type Message,
 } from "../shared/tx";
+import { applyStatic, connectorLocale, lang, onLangChange, setLang, t, type Key, type Lang } from "./i18n";
 import { loadNotes, newNote, noteString, parseNote, saveNotes, type Note } from "./notes";
 
 const CHECKPOINT = "ckbmix2.testnet.checkpoint";
@@ -59,12 +60,29 @@ let withdrawing: { note: Note; leaf: number; message?: Message } | undefined;
 const aggregatorStatus = new Map<string, { status: string; tx?: string; reason?: string }>();
 
 // ---- the activity log
+//
+// Lines are kept as a key and its values, not as text: switching languages
+// rewrites what the page has said so far, in the language now chosen.
 
-function log(html: string, bad = false) {
-  const line = document.createElement("div");
-  line.className = bad ? "bad" : "";
-  line.innerHTML = `<time>${new Date().toLocaleTimeString("zh-CN", { hour12: false })}</time><span class="line-text">${html}</span>`;
-  $("log").prepend(line);
+interface LogEntry {
+  key: Key;
+  vars?: Record<string, string | number>;
+  bad?: boolean;
+  at: number;
+}
+
+const logEntries: LogEntry[] = [];
+
+function log(key: Key, vars?: Record<string, string | number>, bad = false) {
+  logEntries.unshift({ key, vars, bad, at: Date.now() });
+  renderLog();
+}
+
+function renderLog() {
+  const time = (at: number) => new Date(at).toLocaleTimeString(lang() === "zh" ? "zh-CN" : "en-GB", { hour12: false });
+  $("log").innerHTML = logEntries
+    .map((entry) => `<div class="${entry.bad ? "bad" : ""}"><time>${time(entry.at)}</time><span class="line-text">${t(entry.key, entry.vars)}</span></div>`)
+    .join("");
 }
 
 const describe = (error: unknown) => escape(error instanceof Error ? error.message : String(error));
@@ -72,18 +90,18 @@ const describe = (error: unknown) => escape(error instanceof Error ? error.messa
 /** Run a button's action, with the button disabled meanwhile and failures logged. */
 function action(button: HTMLButtonElement, run: () => Promise<void>) {
   button.addEventListener("click", async () => {
-    const label = button.dataset.label ?? button.textContent ?? "";
-    button.dataset.label = label;
+    const key = button.dataset.i18n as Key | undefined;
+    const label = key ? t(key) : (button.dataset.label ?? button.textContent ?? "");
     button.disabled = true;
     try {
       await run();
     } catch (error) {
-      log(`${escape(label)}失败：${describe(error)}`, true);
+      log("action.failed", { label: escape(label), error: describe(error) }, true);
     } finally {
       // The action may have replaced this control (a tab switch, a note that
       // left the list); only touch it if it is still the page's.
       if (button.isConnected) {
-        button.textContent = label;
+        button.textContent = key ? t(key) : label;
         button.disabled = false;
       }
       render();
@@ -110,6 +128,13 @@ function showTab(name: TabName, focus = false) {
     if (tab === name && focus) button.focus();
   }
   localStorage.setItem(TAB, name);
+}
+
+// The toggle is a segmented control: two buttons, the current one pressed.
+function wireLang() {
+  for (const button of document.querySelectorAll<HTMLButtonElement>(".lang [data-lang]")) {
+    button.addEventListener("click", () => setLang(button.dataset.lang as Lang));
+  }
 }
 
 function wireTabs() {
@@ -206,12 +231,12 @@ function render() {
     $("o-capacity").textContent = ckb(pool.ledger.capacity);
     const verified = $("o-verified");
     verified.className = "readout-foot ok";
-    verified.textContent = `重放到块 ${tip.toLocaleString("en-US")}，与链上 cell 逐字节一致`;
+    verified.textContent = t("readout.verified", { tip: tip.toLocaleString("en-US") });
   }
 
   // the tabs carry how much waits behind them
   const notesTab = $("tab-notes");
-  notesTab.innerHTML = `票据${total ? `<span class="count">${total}</span>` : ""}`;
+  notesTab.innerHTML = `${t("tab.notes")}${total ? `<span class="count">${total}</span>` : ""}`;
 
   // footer facts
   if (pool) {
@@ -232,7 +257,7 @@ function renderWallet() {
   const button = document.querySelector(".connect") as HTMLButtonElement | null;
   if (button) {
     const label = button.querySelector(".label")!;
-    label.textContent = owner ? middle(owner.address, 8, 6) : "连接钱包";
+    label.textContent = owner ? middle(owner.address, 8, 6) : t("wallet.connect");
     // The connector draws its own connected view when it is opened again.
     const open = (connector?.style.display ?? "none") !== "none";
     button.dataset.state = open ? "open" : "closed";
@@ -258,7 +283,7 @@ function renderNotes() {
   list.innerHTML = "";
   const shown = notes.filter((note) => note !== fresh);
   if (!shown.length) {
-    list.innerHTML = `<li class="empty">这个浏览器里还没有票据。生成一张，或者在存款页导入已有的票据。</li>`;
+    list.innerHTML = `<li class="empty">${t("notes.empty")}</li>`;
     return;
   }
   shown.forEach((note, index) => {
@@ -273,54 +298,58 @@ function renderNotes() {
     const buttons: [string, () => void][] = [];
     switch (status.kind) {
       case "new":
-        state = "未存入";
-        detail = "链上找不到它的意向——可能被放弃了，也可能还没有上链。";
+        state = t("state.new");
+        detail = t("detail.new");
         break;
       case "sent":
-        state = "正在上链";
-        detail = `意向交易 ${txLink(status.tx)}，等它进入区块。`;
+        state = t("state.sent");
+        detail = t("detail.sent", { tx: txLink(status.tx) });
         break;
       case "waiting": {
         const mine = owner?.hash === status.args.owner_lock_hash;
-        state = "等聚合者成交";
+        state = t("state.waiting");
         if (!status.args.reclaimable) {
-          state = "无法撤回";
-          detail = `等待期字段写成了 ${status.args.reclaim_after}，超出 2^56，这个意向只能等人成交。`;
+          state = t("state.locked");
+          detail = t("detail.locked", { n: status.args.reclaim_after.toString() });
         } else if (status.left > 0n) {
-          detail = `还有 ${status.left} 个区块可以撤回。意向 ${txLink(status.cell.out_point.tx_hash)}。`;
+          detail = t("detail.left", { n: status.left.toString(), tx: txLink(status.cell.out_point.tx_hash) });
         } else {
-          detail = mine ? "已经过了等待期，现在可以撤回。" : "已经过了等待期；用创建它的钱包连接后才能撤回。";
+          detail = t(mine ? "detail.reclaimableMine" : "detail.reclaimableOther");
         }
-        if (status.args.reclaimable && status.left === 0n && mine) buttons.push(["撤回", () => reclaim(note, status.cell, status.args)]);
+        if (status.args.reclaimable && status.left === 0n && mine) buttons.push([t("button.reclaim"), () => reclaim(note, status.cell, status.args)]);
         break;
       }
       case "deposited": {
-        state = "在池中";
-        detail = `第 ${status.leaf} 片叶子，可以取款。`;
+        state = t("state.deposited");
+        detail = t("detail.leaf", { n: String(status.leaf) });
         const sent = note.withdrawal;
         if (sent) {
           const known = aggregatorStatus.get(sent.message.nullifier_hash);
           if (sent.via === "aggregator") {
-            const says: Record<string, string> = { queued: "等聚合者打包", sent: "聚合者已发出", settled: "已上链", dropped: "被聚合者退回" };
-            detail += `取款${says[known?.status ?? ""] ?? "状态未知"}${known?.tx ? ` ${txLink(known.tx)}` : ""}${known?.reason ? `：${escape(known.reason)}` : ""}。`;
+            const says: Record<string, Key> = { queued: "agg.queued", sent: "agg.sent", settled: "agg.settled", dropped: "agg.dropped" };
+            detail += t("detail.withdrawAgg", {
+              state: t(says[known?.status ?? ""] ?? "agg.unknown"),
+              tx: known?.tx ? ` ${txLink(known.tx)}` : "",
+              reason: known?.reason ? t("detail.reason", { reason: escape(known.reason) }) : "",
+            });
           } else if (sent.tx) {
-            detail += `取款交易 ${txLink(sent.tx)}。`;
+            detail += t("detail.withdrawSelf", { tx: txLink(sent.tx) });
           }
         }
-        buttons.push(["取款", () => openWithdraw(note, status.leaf)]);
+        buttons.push([t("button.withdraw"), () => openWithdraw(note, status.leaf)]);
         break;
       }
       case "withdrawn":
-        state = "已取款";
-        detail = note.withdrawal?.tx ? `交易 ${txLink(note.withdrawal.tx)}。` : "已从池中取走。";
+        state = t("state.withdrawn");
+        detail = note.withdrawal?.tx ? t("detail.withdrawnTx", { tx: txLink(note.withdrawal.tx) }) : t("detail.withdrawn");
         break;
       case "reclaimed":
-        state = "已撤回";
-        detail = `交易 ${txLink(note.reclaimed!)}。`;
+        state = t("state.reclaimed");
+        detail = t("detail.reclaimedTx", { tx: txLink(note.reclaimed!) });
         break;
     }
-    buttons.push(["票据", () => showNote(note)]);
-    if (status.kind !== "deposited" && status.kind !== "waiting") buttons.push(["删除", () => remove(note)]);
+    buttons.push([t("button.note"), () => showNote(note)]);
+    if (status.kind !== "deposited" && status.kind !== "waiting") buttons.push([t("button.remove"), () => remove(note)]);
 
     item.innerHTML = `
       <span class="note-index">${String(index + 1).padStart(2, "0")}</span>
@@ -358,14 +387,14 @@ function renderPool() {
   const cell = pool.cell.out_point;
   const waiting = intents.filter(({ cell }) => !cell.output.type && cell.data === "0x").length;
   $("pool-facts").innerHTML = `
-    <div><dt>面额</dt><dd>${ckb(pool.config.denomination)} CKB</dd></div>
-    <div><dt>池内</dt><dd>${ckb(pool.ledger.capacity)} CKB</dd></div>
-    <div><dt>承诺根</dt><dd class="mono">${toHex(pool.ledger.current_root())}</dd></div>
-    <div><dt>nullifier 根</dt><dd class="mono">${toHex(pool.ledger.nullifier_root())}</dd></div>
-    <div><dt>池子 cell</dt><dd class="mono">${txLink(cell.tx_hash)}<br />输出 ${Number(cell.index)}</dd></div>
-    <div><dt>池子 type 脚本</dt><dd class="mono">${txLink(DEPS.poolType.tx_hash)}<br />输出 ${Number(DEPS.poolType.index)}</dd></div>
-    <div><dt>等待成交的意向</dt><dd>${waiting} 个</dd></div>
-    <div><dt>保存的历史根</dt><dd>${pool.config.root_history} 个</dd></div>`;
+    <div><dt>${t("fact.denomination")}</dt><dd>${ckb(pool.config.denomination)} CKB</dd></div>
+    <div><dt>${t("fact.capacity")}</dt><dd>${ckb(pool.ledger.capacity)} CKB</dd></div>
+    <div><dt>${t("fact.root")}</dt><dd class="mono">${toHex(pool.ledger.current_root())}</dd></div>
+    <div><dt>${t("fact.nullifierRoot")}</dt><dd class="mono">${toHex(pool.ledger.nullifier_root())}</dd></div>
+    <div><dt>${t("fact.cell")}</dt><dd class="mono">${txLink(cell.tx_hash)}<br />${t("fact.output", { n: Number(cell.index) })}</dd></div>
+    <div><dt>${t("fact.type")}</dt><dd class="mono">${txLink(DEPS.poolType.tx_hash)}<br />${t("fact.output", { n: Number(DEPS.poolType.index) })}</dd></div>
+    <div><dt>${t("fact.waiting")}</dt><dd>${t("fact.count", { n: waiting })}</dd></div>
+    <div><dt>${t("fact.history")}</dt><dd>${t("fact.count", { n: pool.config.root_history })}</dd></div>`;
 }
 
 function renderWithdraw() {
@@ -375,23 +404,29 @@ function renderWithdraw() {
     return;
   }
   if (!dialog.open) dialog.showModal();
-  $("withdraw-title").textContent = `票据 ${short(withdrawing.note.commitment)}`;
-  $("withdraw-note").textContent = `第 ${withdrawing.leaf} 片叶子。${pool ? `到手 ${ckb(pool.config.denomination - parseCkb(($("fee") as HTMLInputElement).value))} CKB。` : ""}`;
+  $("withdraw-title").textContent = t("withdraw.titleNote", { commitment: short(withdrawing.note.commitment) });
+  $("withdraw-note").textContent = pool
+    ? t("withdraw.sub", {
+        n: String(withdrawing.leaf),
+        amount: ckb(pool.config.denomination - parseCkb(($("fee") as HTMLInputElement).value)),
+      })
+    : "";
+
   const ready = !!withdrawing.message;
   ($("to-aggregator") as HTMLButtonElement).disabled = !ready;
   ($("send-self") as HTMLButtonElement).disabled = !ready;
-  $("message").textContent = ready ? JSON.stringify(withdrawing.message, null, 2) : "生成证明后出现在这里。";
+  $("message").textContent = ready ? JSON.stringify(withdrawing.message, null, 2) : t("withdraw.messageEmpty");
 }
 
 function showNote(note: Note) {
   void navigator.clipboard?.writeText(noteString(note)).then(
-    () => log("票据已复制到剪贴板。"),
-    () => window.prompt("票据（请妥善保存，不要给别人）", noteString(note)),
+    () => log("note.copied"),
+    () => window.prompt(t("note.copyPrompt"), noteString(note)),
   );
 }
 
 function remove(note: Note) {
-  if (!confirm("从这个浏览器里删除这张票据？如果它还有钱没取，删除后只能靠你的备份。")) return;
+  if (!confirm(t("note.removeConfirm"))) return;
   notes = notes.filter((other) => other !== note);
   saveNotes(notes);
   render();
@@ -417,7 +452,7 @@ function wireConnect() {
   button.type = "button";
   button.setAttribute("aria-haspopup", "dialog");
   button.setAttribute("aria-expanded", "false");
-  button.innerHTML = `<span class="dot" aria-hidden="true"></span><span class="label">连接钱包</span>`;
+  button.innerHTML = `<span class="dot" aria-hidden="true"></span><span class="label">${t("wallet.connect")}</span>`;
   button.addEventListener("click", () => openConnect());
   mount.append(button);
 
@@ -425,7 +460,7 @@ function wireConnect() {
     const element = document.createElement("ccc-connector") as WebComponentConnector;
     element.client = client;
     element.hideKhie = true;
-    element.locale = "zh-Hans";
+    element.locale = connectorLocale();
     element.style.display = "none";
     element.style.zIndex = "100";
     element.style.cssText += [
@@ -487,13 +522,13 @@ async function onConnection(connection: ConnectorConnection | undefined) {
 async function adopt(next: ccc.Signer, from: string) {
   try {
     const address = await next.getRecommendedAddressObj();
-    if (address.prefix !== "ckt") throw new Error("这个钱包不在 CKB 测试网上");
+    if (address.prefix !== "ckt") throw new Error(t("wallet.notTestnet"));
     const lock = scriptJson(address.script);
     signer = next;
     owner = { address: address.toString(), lock, hash: scriptHash(lock) };
-    log(`钱包已连接 <span class="mono">${escape(short(owner.address))}</span>（${escape(from)}）。`);
+    log("wallet.connected", { address: `<span class="mono">${escape(short(owner.address))}</span>`, from: escape(from) });
   } catch (error) {
-    log(`钱包连接失败：${describe(error)}`, true);
+    log("wallet.failed", { error: describe(error) }, true);
     signer = owner = undefined;
   }
   render();
@@ -510,14 +545,14 @@ async function disconnect() {
   connectionOwner = undefined;
   signer = owner = undefined;
   connector?.disconnect();
-  log("钱包已断开。");
+  log("wallet.disconnected");
   render();
 }
 
 // ---- deposit
 
 async function deposit() {
-  if (!fresh || !signer || !owner || !pool) throw new Error("先连接钱包并生成票据");
+  if (!fresh || !signer || !owner || !pool) throw new Error(t("deposit.needWallet"));
   // The demo page has one offer: the tip the aggregator asks for, and a wait
   // long enough for a batch or two but short enough to reclaim the same day.
   // (A number of blocks, never an encoded `since`: a wait of 2^56 or more
@@ -529,10 +564,10 @@ async function deposit() {
   // Read the lock back the way the scripts will, before any money moves.
   const args = intentArgs(lock.args);
   if (!args || !args.reclaimable || !args.canonical || args.reclaim_after !== wait || args.owner_lock_hash !== owner.hash || args.pool_type_hash !== pool.typeHash) {
-    throw new Error("意向的 lock 参数自检没有通过，没有发送任何交易");
+    throw new Error(t("deposit.lockCheck"));
   }
   const capacity = intentCapacity(tipShannons);
-  if (capacity < plainCellCapacity(lock)) throw new Error("意向 cell 的容量不够它自身占用的 145 CKB");
+  if (capacity < plainCellCapacity(lock)) throw new Error(t("deposit.tooSmall"));
 
   const note = fresh;
   const tx = ccc.Transaction.from({
@@ -550,30 +585,36 @@ async function deposit() {
   // honest state: the transaction is accepted by the node, not yet in a block.
   const receipt = $("receipt");
   receipt.hidden = false;
-  $("receipt-line").innerHTML =
-    `意向交易 ${txLink(hash)} 已交给节点，正在等它进入区块。` +
-    `${ckb(capacity)} CKB 锁在里面，${wait} 个区块后可撤回；聚合者成交后，票据在「票据」里会变成「在池中」。`;
-  log(`意向已创建 ${txLink(hash)}：${ckb(capacity)} CKB，${wait} 个区块后可撤回。`);
+  receiptVars = { tx: txLink(hash), amount: ckb(capacity), wait: wait.toString() };
+  renderReceipt();
+  log("log.intent", { tx: txLink(hash), amount: ckb(capacity), wait: wait.toString() });
   render();
   receipt.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+/** The receipt stays until the next note; its values are kept so a language switch rewrites it. */
+let receiptVars: Record<string, string> | undefined;
+function renderReceipt() {
+  const line = $("receipt-line");
+  if (line && receiptVars) line.innerHTML = t("receipt.line", receiptVars);
 }
 
 // ---- reclaim
 
 async function reclaim(note: Note, cell: LiveCell, args: IntentArgs) {
   try {
-    if (!signer || !owner) throw new Error("先连接创建这个意向的钱包");
-    if (owner.hash !== args.owner_lock_hash) throw new Error("这个意向不属于当前连接的钱包");
+    if (!signer || !owner) throw new Error(t("reclaim.needWallet"));
+    if (owner.hash !== args.owner_lock_hash) throw new Error(t("reclaim.notMine"));
     const tx = reclaimDraft(cell, args.reclaim_after);
     // The intent lock wants an input under the owner's lock next to it.
     await tx.completeInputsAddOne(signer);
     await tx.completeFeeBy(signer, FEE_RATE);
     const hash = await signer.sendTransaction(tx);
     update(note, { reclaimed: hash });
-    log(`撤回交易已发出 ${txLink(hash)}，${ckb(BigInt(cell.output.capacity))} CKB 回到你的钱包。`);
+    log("reclaim.sent", { tx: txLink(hash), amount: ckb(BigInt(cell.output.capacity)) });
   } catch (error) {
     const text = describe(error);
-    log(/Immature/.test(text) ? "撤回失败：等待期还没有过（节点报告 Immature），过几个区块再试。" : `撤回失败：${text}`, true);
+    log(/Immature/.test(text) ? "reclaim.immature" : "reclaim.failed", { error: text }, true);
   }
   render();
 }
@@ -591,7 +632,7 @@ let vkChecked = false;
 async function checkCircuit() {
   if (vkChecked) return;
   const vk = await (await fetch("/circuit/verification_key.json")).text();
-  if (toHex(ckb_hash(vk_from_snarkjs(vk))) !== pool!.config.vk_hash) throw new Error("页面带的电路不是这个池子的电路");
+  if (toHex(ckb_hash(vk_from_snarkjs(vk))) !== pool!.config.vk_hash) throw new Error(t("prove.wrongCircuit"));
   vkChecked = true;
 }
 
@@ -600,10 +641,10 @@ async function prove(button: HTMLButtonElement) {
   const state = withdrawing;
   state.message = undefined;
   const address = ($("recipient") as HTMLInputElement).value.trim();
-  if (!address.startsWith("ckt1")) throw new Error("收款地址必须是 CKB 测试网地址（ckt1…）");
+  if (!address.startsWith("ckt1")) throw new Error(t("prove.badAddress"));
   const recipient = scriptJson((await ccc.Address.fromString(address, client)).script);
   const fee = parseCkb(($("fee") as HTMLInputElement).value);
-  if (pool.config.denomination - fee < plainCellCapacity(recipient)) throw new Error("扣掉手续费后不够收款 cell 的最低容量");
+  if (pool.config.denomination - fee < plainCellCapacity(recipient)) throw new Error(t("prove.tooSmall"));
 
   await refresh(); // prove against the newest root
   await checkCircuit();
@@ -611,10 +652,10 @@ async function prove(button: HTMLButtonElement) {
   const prepared = JSON.parse(
     pool.ledger.withdraw_input(leaf, fromHex(note.nullifier), fromHex(note.secret), fromHex(scriptHash(recipient)), fee),
   );
-  button.textContent = "正在生成证明…";
+  button.textContent = t("prove.working");
   const started = performance.now();
   const { proof, publicSignals } = await snarkjs.groth16.fullProve(prepared.input, "/circuit/withdraw.wasm", "/circuit/withdraw_final.zkey");
-  if (JSON.stringify(publicSignals) !== JSON.stringify(prepared.public)) throw new Error("证明的公开输入和预期不一致");
+  if (JSON.stringify(publicSignals) !== JSON.stringify(prepared.public)) throw new Error(t("prove.mismatch"));
   const message: Message = {
     pool: pool.typeHash,
     root: prepared.root,
@@ -630,9 +671,11 @@ async function prove(button: HTMLButtonElement) {
   state.message = message;
   update(note, { withdrawal: { message } });
   log(
-    `证明已生成（${((performance.now() - started) / 1000).toFixed(1)} 秒），节点试运行通过，${cycles} cycles。` +
-      (fee < least ? ` <span class="bad">手续费低于自己发送的最低矿工费 ${ckb(least)} CKB，只能交给聚合者。</span>` : ""),
+    "prove.done",
+    { seconds: ((performance.now() - started) / 1000).toFixed(1), cycles: String(cycles) },
+    false,
   );
+  if (fee < least) log("prove.lowFee", { fee: ckb(least) }, true);
 }
 
 const aggregatorUrl = () => (localStorage.getItem(AGGREGATOR) ?? DEFAULT_AGGREGATOR).replace(/\/+$/, "");
@@ -646,10 +689,10 @@ async function toAggregator() {
     body: JSON.stringify(message),
   });
   const body: any = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.error ?? `聚合者返回 ${response.status}`);
+  if (!response.ok) throw new Error(body.error ?? t("aggregator.http", { status: response.status }));
   update(note, { withdrawal: { message, via: "aggregator" } });
   aggregatorStatus.set(message.nullifier_hash, body);
-  log(`取款消息已交给聚合者，等它打包。它不理你的话，可以“自己发送”。`);
+  log("aggregator.queued");
   withdrawing = undefined;
 }
 
@@ -666,10 +709,10 @@ async function sendSelf() {
   } catch (error) {
     // Someone else's batch may have taken the pool cell first, or be in the
     // node's pool paying more: the message stays good while its root is known.
-    throw new Error(`${error instanceof Error ? error.message : error}。如果池子 cell 刚被别的交易用掉或占住，等一个区块再试一次；证明所依据的根还在历史里就不用重新生成。`);
+    throw new Error(t("self.busy", { error: escape(error instanceof Error ? error.message : String(error)) }));
   }
   update(note, { withdrawal: { message, via: "self", tx: hash } });
-  log(`取款交易已发出 ${txLink(hash)}：${ckb(pool!.config.denomination - BigInt(message.fee))} CKB 给收款地址，手续费归矿工。`);
+  log("self.sent", { tx: txLink(hash), amount: ckb(pool!.config.denomination - BigInt(message.fee)) });
   withdrawing = undefined;
 }
 
@@ -683,11 +726,13 @@ async function showAggregator() {
   try {
     const info: any = await (await fetch(`${aggregatorUrl()}/info`)).json();
     if (info.error) throw new Error(info.error);
-    log(
-      `聚合者在线（${escape(new URL(aggregatorUrl()).host)}），取款手续费不低于 ${ckb(BigInt(info.min_withdraw_fee))} CKB，意向小费不低于 ${ckb(BigInt(info.min_tip))} CKB。`,
-    );
+    log("aggregator.online", {
+      host: escape(new URL(aggregatorUrl()).host),
+      fee: ckb(BigInt(info.min_withdraw_fee)),
+      tip: ckb(BigInt(info.min_tip)),
+    });
   } catch {
-    log("聚合者暂时连不上。存款意向会等它回来或自己撤回；取款可以“自己发送”。");
+    log("aggregator.offline");
   }
 }
 
@@ -696,20 +741,27 @@ async function showAggregator() {
 async function main() {
   // Every fragment is left over from something that should not have written it.
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+  applyStatic();
+  wireLang();
   await initWasm();
   wireTabs();
   wireConnect();
+  onLangChange(() => {
+    render();
+    renderLog();
+    renderReceipt();
+    if (connector) connector.locale = connectorLocale();
+    if (($("withdraw") as HTMLDialogElement).open) renderWithdraw();
+  });
   render();
 
   ($("fee") as HTMLInputElement).value = ckb(DEFAULT_WITHDRAW_FEE);
-  $("terms-tip").textContent = ckb(DEFAULT_TIP);
-  $("terms-wait").textContent = DEFAULT_WAIT.toString();
-  $("lede-wait").textContent = DEFAULT_WAIT.toString();
   ($("fee") as HTMLInputElement).addEventListener("input", renderWithdraw);
 
   $("new-note").addEventListener("click", () => {
     if (fresh) return;
     $("receipt").hidden = true;
+    receiptVars = undefined;
     fresh = newNote();
     update(fresh, {});
     // The point of the checkbox is that the person saw the note. A note that
@@ -722,7 +774,7 @@ async function main() {
   $("backed-up").addEventListener("change", render);
   $("copy-note").addEventListener("click", () => {
     if (!fresh) return;
-    void navigator.clipboard.writeText(noteString(fresh)).then(() => log("票据已复制。"), () => log("浏览器不允许复制，请手动选中。", true));
+    void navigator.clipboard.writeText(noteString(fresh)).then(() => log("note.copied"), () => log("note.copyFailed", {}, true));
   });
   $("download-note").addEventListener("click", () => {
     if (!fresh) return;
@@ -749,11 +801,11 @@ async function main() {
   action($("import-note-button") as HTMLButtonElement, async () => {
     const input = $("import-note") as HTMLInputElement;
     const note = parseNote(input.value);
-    if (notes.some((other) => other.commitment === note.commitment)) throw new Error("这张票据已经在这里了");
+    if (notes.some((other) => other.commitment === note.commitment)) throw new Error(t("note.duplicate"));
     update(note, {});
     input.value = "";
     $("import").hidden = true;
-    log("票据已导入。");
+    log("note.imported");
   });
   $("disconnect").addEventListener("click", () => void disconnect());
   const proveButton = $("prove") as HTMLButtonElement;
@@ -770,15 +822,15 @@ async function main() {
 
   void showAggregator();
 
-  if ((await rpc.chain()) !== CHAIN) throw new Error("节点不是 CKB 测试网");
+  if ((await rpc.chain()) !== CHAIN) throw new Error(t("chain.wrong"));
   for (;;) {
     try {
       await refresh();
     } catch (error) {
-      log(`同步失败：${describe(error)}`, true);
+      log("sync.failed", { error: describe(error) }, true);
     }
     await new Promise((done) => setTimeout(done, 10_000));
   }
 }
 
-main().catch((error) => log(`启动失败：${describe(error)}`, true));
+main().catch((error) => log("boot.failed", { error: describe(error) }, true));

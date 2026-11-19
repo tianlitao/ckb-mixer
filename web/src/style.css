@@ -165,6 +165,51 @@ input {
   white-space: nowrap;
 }
 
+/* the language toggle sits beside the wallet button, quieter than it */
+.masthead-tools {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 0 auto;
+}
+
+.lang {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--hair-strong);
+  border-radius: 999px;
+  padding: 2px;
+  background: var(--paper);
+}
+
+.lang button {
+  all: unset;
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 6px 9px 5px;
+  border-radius: 999px;
+  color: var(--muted);
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+
+.lang button:hover {
+  color: var(--ink);
+}
+
+.lang button[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.lang button:focus-visible {
+  outline: 2px solid var(--pool);
+  outline-offset: 2px;
+}
+
 /* the connect button doubles as the wallet menu */
 .connect-mount {
   display: flex;
@@ -800,9 +845,11 @@ input.grow {
   letter-spacing: -0.005em;
 }
 
+/* the numbers sit in running text, so they take the text face with fixed
+   figures: a monospace "0.1" puts a whole cell around the point */
 .terms span {
-  font-family: var(--mono);
-  font-size: 0.92em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 560;
   color: var(--ink-soft);
 }
 
@@ -1192,6 +1239,20 @@ input.grow {
   .log div {
     grid-template-columns: 1fr;
     gap: 2px;
+  }
+}
+
+@media (max-width: 640px) {
+  /* the corner has two things now: the toggle and the wallet go on their own
+     row, so neither is squeezed against the wordmark */
+  .masthead {
+    flex-wrap: wrap;
+    row-gap: 12px;
+  }
+
+  .masthead-tools {
+    width: 100%;
+    justify-content: space-between;
   }
 }
 

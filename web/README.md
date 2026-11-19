@@ -19,7 +19,9 @@
 
 ## 页面
 
-一张纸、一种墨。字体是自托管的 Instrument Sans（正文）和 Martian Mono（数字、哈希），不连字体 CDN；颜色只有纸色、墨色、一根发丝线和池子自己的绿。登录和取款弹窗跟着页面的样式走（CCC 的组件用 CSS 变量换色，语言设成 `zh-Hans`），取款是一个 `dialog`，小屏上也能用。动画只有加载时标题的一次擦入，`prefers-reduced-motion` 下关掉。
+一张纸、一种墨。字体是自托管的 Instrument Sans（正文）和 Martian Mono（数字、哈希），不连字体 CDN；颜色只有纸色、墨色、一根发丝线和池子自己的绿。登录和取款弹窗跟着页面的样式走（CCC 的组件用 CSS 变量换色），取款是一个 `dialog`，小屏上也能用。动画只有加载时标题的一次擦入，`prefers-reduced-motion` 下关掉。
+
+右上角有中文 / English 两个按钮。所有文案都在 `src/i18n.ts` 里按 key 集中：静态文案由 `data-i18n`、`data-i18n-html`（允许 `<b>`、`<span>` 这类标记）和 `data-i18n-label`（无障碍标签）标在 `index.html` 上，JS 里一律用 `t(key, vars)` 取；动作日志存的是 key 和插值，所以切语言会把页面上已经说过的话一起改写。选择记在 `localStorage`（`ckbmix2.testnet.lang`），第一次访问按浏览器语言决定；CCC 的登录弹窗跟着切（`zh-Hans` / `en`），`<html lang>` 和标题也一起改。`shared/` 里链上逻辑抛出的错误还是中文，只出现在 `{error}` 插值里。
 
 存款页只接受一种意向：面额 150 CKB、小费 0.1 CKB、等待 30 个区块后可撤回（`shared/config.ts` 的 `DEFAULT_TIP`、`DEFAULT_WAIT`），页面上只陈述、不提供输入框。签名之后页面里会留下回执：意向交易的链接、锁住的容量、等待的区块数，直到生成下一张票据才消失——钱包自己的确认提示关掉之后，这是唯一还看得见的凭据。生成票据后「票据已经保存到别处」默认勾选，票据已经显示在页面上。页面上没有私钥输入：存款和撤回都要连钱包。
 
