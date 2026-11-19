@@ -573,6 +573,19 @@ type script hash `0xb415f2f2842ca7cb87f229499f2cbb1804be7efbeb20452efc79de20da26
 * 抢意向只试了"一笔顶一笔"。顶掉一条链、对手持续抬价、以及带取款的批次被顶掉后重拼，都没有做。
 * 所有 note 仍是同一个人存、同一个人取：功能验证，不是隐私演示。可信设置仍是 dev-only 的。
 
+### 网页演示（2026-11-19）
+
+v2 之上做了一个只用于测试网的网页（`web/`，见 [web/README.md](web/README.md)），已经部署在
+Cloudflare 上：页面 <https://ckb-mixer-web.tianlitao3399.workers.dev>（Workers 静态资源，
+中 / 英两种语言），聚合者 <https://ckb-mixer-aggregator.tianlitao3399.workers.dev>（每分钟一次的
+cron）。页面用 CCC 官方的钱包连接组件，在浏览器里生成取款证明；聚合者地址在构建时编进包里，页面上只读。
+
+在已部署的页面上走过两轮：存款意向 → 线上聚合者成交，以及浏览器生成证明 → 交给聚合者 → 线上批次打包取款
+（`0x15c71daa…`，收款地址到账 149.99 CKB）；页面自己的保底取款路径也走过。截至 2026-11-19 07:30 UTC，
+池子重放 26 笔交易后与链上 cell 逐字节一致：2,250 CKB、61 笔存款、59 笔取款、2 笔未取。
+钱包连接走 CCC 官方的 connector，线上只走过一次、没有记录用的是哪个钱包；带取款的批次在 Workers
+免费档的 10 ms CPU 限额下没有量过。这些和其余局限都记在 web/README.md。
+
 ## 六、已验证的不变量（`tests/tests/e2e.rs`）
 
 诚实流程：
