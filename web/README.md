@@ -87,17 +87,7 @@ curl https://ckb-mixer-aggregator.tianlitao3399.workers.dev/info
 
 Cloudflare 现在把 Pages 并进了 Workers：新建的 `wrangler pages project create` 会委派给 `wrangler deploy`，对一个不存在的项目名只会报错（wrangler 4.164 实测）。静态资源这一套的配置更简单，和聚合者一样是一条 `wrangler deploy`，所以两个都走 Workers。
 
-### 另一个地址：Pages
-
-同一个页面也部署在 **<https://ckb-mixer-web.pages.dev>**。这一份跟 workers.dev 那份不是同一个构建：Pages 版把聚合者的地址写成同源的 `/aggregator`，由 `public/_worker.js`（Pages Functions，advanced mode）转发到聚合者 Worker。这样 URL 栏、动作日志和网络面板里出现的都是 `ckb-mixer-web.pages.dev`，看不到 Worker 所在的账号子域。
-
-```bash
-npm run pages:deploy
-```
-
-两条构建不能换着部署：workers.dev 那份是纯静态资源，没有 Function，`/aggregator/*` 会 404，所以那个站点必须用绝对 URL 构建（`npm run build:web`，或照上面的 `VITE_AGGREGATOR_URL=… npm run build`）；Pages 那份用 `npm run build:pages`（地址是 `/aggregator`）。`dist/` 只有一份，所以 `pages:deploy` 会自己先构建；往 workers.dev 部署前要重新 `build:web`，它建完会把 `dist/_worker.js` 删掉，那个站点的产物里不留 Function。
-
-advanced mode 下所有请求都过 Function（静态资源也一样），免费档每天 100,000 次调用；页面只有三个文件、走缓存，正常访问远用不到。
+旧的 Pages 路线仍然可以用 `npx wrangler pages deploy dist --project-name <名字> --force` 部署，得到 `*.pages.dev` 地址；本仓库没有这么做。
 
 ### 重新部署
 

@@ -4,9 +4,6 @@
 #   npm run web:deploy
 #
 # The aggregator URL is compiled into the bundle; a rebuild is needed to change it.
-# This site has no Function, so the bundle must carry the aggregator's absolute
-# URL (`npm run build:web`). The /aggregator proxy lives in the Pages deployment
-# only — see README.
 
 name = "ckb-mixer-web"
 compatibility_date = "2026-11-01"
