@@ -123,7 +123,7 @@ tools/testnet/             测试网工具（独立 workspace，直接讲 JSON-R
   src/bin/mixer2.rs        v2 的命令行入口：存款人、取款人、聚合者三个角色
 docs/intent-aggregation.md 池子 v2 的设计、安全性分析和实测：存款意向 cell + 聚合
 crates/mixer-wasm/         mixer-core / mixer-core-v2 / prover 的 WebAssembly 绑定（独立 workspace，不进链上构建）
-web/                       池子 v2 的网页前端（Cloudflare Pages）和聚合者 Worker，仅测试网；见 web/README.md
+web/                       池子 v2 的网页前端（Workers 静态资源）和聚合者 Worker，仅测试网；见 web/README.md
 ```
 
 ## 三、如何运行

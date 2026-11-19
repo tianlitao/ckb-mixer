@@ -13,11 +13,19 @@ import { ccc } from "@ckb-ccc/core";
 import wasmModule from "../wasm/mixer_wasm_bg.wasm";
 import { initSync } from "../wasm/mixer_wasm.js";
 import { CHAIN, FEE_RATE, RPC_URL } from "../shared/config";
-import { liveIntents, syncPool, type Checkpoint, type Pool } from "../shared/pool";
+import { liveIntents, poolConfig, poolTypeHash, syncPool, type Checkpoint, type Pool } from "../shared/pool";
 import { Rpc, RpcError, type LiveCell } from "../shared/rpc";
 import { batchDraft, feeFor, parseMessage, refusal, txJson, txSize, txWeight, type Message } from "../shared/tx";
 
 initSync({ module: wasmModule });
+
+// A run on the free plan has 10 ms of CPU; start-up has an allowance of its
+// own. So what an isolate needs done once is done here: reading the pool's
+// parameters, and the first secp256k1 operation, which builds tables and alone
+// takes longer than that (the key guards nothing).
+poolConfig();
+poolTypeHash();
+new ccc.SignerCkbPrivateKey(new ccc.ClientPublicTestnet(), `0x${"00".repeat(31)}01`);
 
 export interface Env {
   STATE: KVNamespace;
@@ -32,6 +40,8 @@ export interface Env {
   MIN_BLOCKS_LEFT?: string;
   MAX_WITHDRAWALS?: string;
   MAX_INTENTS?: string;
+  /** The queue of withdrawals is read on every this-many-th minute. */
+  LIST_EVERY?: string;
 }
 
 interface Settings {
@@ -41,6 +51,7 @@ interface Settings {
   minBlocksLeft: bigint;
   maxWithdrawals: number;
   maxIntents: number;
+  listEvery: number;
 }
 
 const settings = (env: Env): Settings => ({
@@ -52,6 +63,9 @@ const settings = (env: Env): Settings => ({
   minBlocksLeft: BigInt(env.MIN_BLOCKS_LEFT || 10),
   maxWithdrawals: Number(env.MAX_WITHDRAWALS || 4),
   maxIntents: Number(env.MAX_INTENTS || 16),
+  // A listing is the one thing KV's free plan gives fewer of (1,000 a day)
+  // than a day has minutes.
+  listEvery: Math.max(1, Number(env.LIST_EVERY || 2)),
 });
 
 /** A withdrawal this aggregator was handed. */
@@ -84,11 +98,49 @@ const json = (body: unknown, status = 200) =>
 
 const key = (nullifierHash: string) => `w:${nullifierHash}`;
 
+/** What a listing says about an entry: enough to pick the ones worth reading. */
+interface Meta {
+  status: Entry["status"];
+  fee: number;
+  received: number;
+}
+
+const DAY = 86_400;
+
+/**
+ * How long KV keeps an entry after its last change, in seconds. The chain is
+ * the record of what was paid; this is only what the aggregator did about it.
+ */
+const KEEP: Record<Entry["status"], number> = { queued: 7 * DAY, sent: 7 * DAY, settled: DAY, dropped: DAY };
+
+function save(state: KVNamespace, entry: Entry): Promise<void> {
+  const metadata: Meta = { status: entry.status, fee: entry.message.fee, received: entry.received };
+  return state.put(key(entry.message.nullifier_hash), JSON.stringify(entry), { metadata, expirationTtl: KEEP[entry.status] });
+}
+
+/** The queued withdrawals that offer the most, at most `limit` of them. */
+async function queue(state: KVNamespace, limit: number): Promise<Entry[]> {
+  const waiting: { name: string; fee: number; received: number }[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await state.list<Meta>({ prefix: "w:", cursor });
+    for (const { name, metadata } of page.keys) {
+      if (metadata?.status === "queued") waiting.push({ name, fee: metadata.fee, received: metadata.received });
+    }
+    cursor = page.list_complete ? undefined : page.cursor;
+  } while (cursor);
+  waiting.sort((a, b) => b.fee - a.fee || a.received - b.received);
+  const entries = await Promise.all(waiting.slice(0, limit).map(({ name }) => state.get<Entry>(name, "json")));
+  // A listing can be behind what the keys hold: the entry itself has the last word.
+  return entries.filter((entry): entry is Entry => entry?.status === "queued");
+}
+
 function signerOf(env: Env, url: string) {
-  if (!/^(0x)?[0-9a-fA-F]{64}$/.test(env.AGGREGATOR_KEY ?? "")) throw new Error("AGGREGATOR_KEY is not set");
-  const client = new ccc.ClientPublicTestnet({ url });
-  const privateKey = env.AGGREGATOR_KEY.startsWith("0x") ? env.AGGREGATOR_KEY : `0x${env.AGGREGATOR_KEY}`;
-  return new ccc.SignerCkbPrivateKey(client, privateKey);
+  // A secret pasted or piped in tends to bring a newline along.
+  const key = (env.AGGREGATOR_KEY ?? "").trim().replace(/^0x/i, "");
+  if (!key) throw new Error("AGGREGATOR_KEY is not set");
+  if (!/^[0-9a-f]{64}$/i.test(key)) throw new Error("AGGREGATOR_KEY is not a private key: it should be 64 hex digits");
+  return new ccc.SignerCkbPrivateKey(new ccc.ClientPublicTestnet({ url }), `0x${key}`);
 }
 
 async function loadPool(env: Env, rpc: Rpc): Promise<Pool> {
@@ -131,7 +183,7 @@ async function accept(request: Request, env: Env): Promise<Response> {
   if (failed) return json({ error: `池子的脚本拒绝了这笔取款: ${failed}` }, 400);
 
   const entry: Entry = { message, received: Date.now(), status: "queued" };
-  await env.STATE.put(key(message.nullifier_hash), JSON.stringify(entry));
+  await save(env.STATE, entry);
   return json({ status: entry.status, nullifier_hash: message.nullifier_hash });
 }
 
@@ -175,37 +227,38 @@ async function finish(draft: ccc.Transaction, signer: ccc.Signer, rpc: Rpc): Pro
   return { tx, fee: await tx.getFee(signer.client), cycles };
 }
 
-async function tick(env: Env): Promise<Record<string, unknown>> {
+/** One run of the cron, the one scheduled for `at` (milliseconds). */
+async function tick(env: Env, at: number): Promise<Record<string, unknown>> {
   const config = settings(env);
   const rpc = new Rpc(config.rpcUrl);
   const state = env.STATE;
 
   // One batch at a time: a second one would spend the same pool cell.
   const pending = await state.get<Pending>("pending", "json");
+  const requeued: Entry[] = [];
   if (pending) {
     const { status } = await rpc.status(pending.hash);
     if (status === "pending" || status === "proposed") return { waiting: pending.hash, status };
     for (const hash of pending.withdrawals) {
       const entry = await state.get<Entry>(key(hash), "json");
       if (!entry) continue;
-      // Not committed: it goes back in the queue and is looked at afresh below.
-      const next: Entry = status === "committed" ? { ...entry, status: "settled", tx: pending.hash } : { ...entry, status: "queued", tx: undefined };
-      await state.put(key(hash), JSON.stringify(next));
+      if (status === "committed") {
+        await save(state, { ...entry, status: "settled", tx: pending.hash });
+      } else {
+        // It goes back in the queue and is looked at afresh below.
+        const again: Entry = { ...entry, status: "queued", tx: undefined };
+        await save(state, again);
+        requeued.push(again);
+      }
     }
     await state.delete("pending");
   }
 
-  const pool = await loadPool(env, rpc);
-  const [tip, indexed, live] = await Promise.all([
-    rpc.tip(),
-    rpc.indexerTip(),
-    rpc.call("get_live_cell", [pool.cell.out_point, false]),
-  ]);
-  // The indexer runs a little behind the chain: the pool cell it reports may be spent already.
-  if (live.status !== "live") return { skipped: "the indexer is behind the pool", tip: tip.toString(), indexed: indexed.toString() };
-
-  const denomination = pool.config.denomination;
-  const intents: LiveCell[] = (await liveIntents(rpc))
+  // What there is to do comes first, and costs little: most runs find nothing,
+  // and then the pool is not even looked at.
+  const [tip, found] = await Promise.all([rpc.tip(), liveIntents(rpc)]);
+  const denomination = poolConfig().denomination;
+  const intents: LiveCell[] = found
     .filter(({ cell, args }) => {
       if (cell.output.type || cell.data !== "0x" || !args.canonical) return false;
       if (BigInt(cell.output.capacity) < denomination + config.minTip) return false;
@@ -216,24 +269,33 @@ async function tick(env: Env): Promise<Record<string, unknown>> {
     .sort((a, b) => (BigInt(b.output.capacity) > BigInt(a.output.capacity) ? 1 : -1))
     .slice(0, config.maxIntents);
 
+  // Deposits are found on the chain every minute. Withdrawals wait in KV, and
+  // are read on every `listEvery`-th minute; the ones a batch that failed gave
+  // back are at hand already.
+  const listing = Math.floor(at / 60_000) % config.listEvery === 0;
+  const candidates = listing ? await queue(state, 2 * config.maxWithdrawals) : requeued;
+  if (intents.length === 0 && candidates.length === 0) return { idle: true, tip: tip.toString() };
+
+  const pool = await loadPool(env, rpc);
+  // The indexer runs a little behind the chain: the pool cell it reports may be spent already.
+  const live = await rpc.call("get_live_cell", [pool.cell.out_point, false]);
+  if (live.status !== "live") return { skipped: "the indexer is behind the pool", tip: tip.toString() };
+
   const queued: Entry[] = [];
-  const listed = await state.list({ prefix: "w:", limit: 100 });
-  for (const { name } of listed.keys) {
-    const entry = await state.get<Entry>(name, "json");
-    if (!entry || entry.status !== "queued") continue;
+  for (const entry of candidates) {
     const refused = refusal(pool, entry.message);
     if (!refused) {
       queued.push(entry);
     } else if (pool.ledger.is_spent(ccc.bytesFrom(entry.message.nullifier_hash))) {
       // Someone else sent it, the user by the fallback path for one.
-      await state.put(name, JSON.stringify({ ...entry, status: "settled" } satisfies Entry));
+      await save(state, { ...entry, status: "settled" });
     } else {
-      await state.put(name, JSON.stringify({ ...entry, status: "dropped", reason: refused } satisfies Entry));
+      await save(state, { ...entry, status: "dropped", reason: refused });
     }
   }
   queued.sort((a, b) => b.message.fee - a.message.fee || a.received - b.received);
   const payouts = queued.slice(0, config.maxWithdrawals).map((entry) => entry.message);
-  if (intents.length === 0 && payouts.length === 0) return { idle: true, deposits: pool.ledger.leaf_count, withdrawals: pool.ledger.nullifier_count };
+  if (intents.length === 0 && payouts.length === 0) return { idle: true, tip: tip.toString() };
 
   const signer = signerOf(env, config.rpcUrl);
   let result: Awaited<ReturnType<typeof finish>>;
@@ -247,7 +309,7 @@ async function tick(env: Env): Promise<Record<string, unknown>> {
       const failed = await verify(rpc, pool, message);
       if (!failed) continue;
       const entry = queued.find((e) => e.message.nullifier_hash === message.nullifier_hash)!;
-      await state.put(key(message.nullifier_hash), JSON.stringify({ ...entry, status: "dropped", reason: failed } satisfies Entry));
+      await save(state, { ...entry, status: "dropped", reason: failed });
       dropped++;
     }
     return { failed: (error as Error).message, dropped };
@@ -265,7 +327,7 @@ async function tick(env: Env): Promise<Record<string, unknown>> {
   await state.put("pending", JSON.stringify(sent));
   for (const message of payouts) {
     const entry = queued.find((e) => e.message.nullifier_hash === message.nullifier_hash)!;
-    await state.put(key(message.nullifier_hash), JSON.stringify({ ...entry, status: "sent", tx: hash } satisfies Entry));
+    await save(state, { ...entry, status: "sent", tx: hash });
   }
   return {
     sent: hash,
@@ -277,16 +339,29 @@ async function tick(env: Env): Promise<Record<string, unknown>> {
   };
 }
 
-async function runTick(env: Env): Promise<Record<string, unknown>> {
+/**
+ * Keeps the last thing worth knowing for `GET /info`. KV writes are limited
+ * (1,000 a day on the free plan): an idle tick leaves no trace, and a failure
+ * that repeats every minute leaves one an hour.
+ */
+async function remember(state: KVNamespace, outcome: Record<string, unknown>): Promise<void> {
+  if (!outcome.sent) {
+    const last = await state.get<Record<string, unknown>>("last", "json");
+    const same = last && last.error === outcome.error && last.failed === outcome.failed;
+    if (same && Number(outcome.at) - Number(last.at) < 3_600_000) return;
+  }
+  await state.put("last", JSON.stringify(outcome));
+}
+
+async function runTick(env: Env, at: number): Promise<Record<string, unknown>> {
   let outcome: Record<string, unknown>;
   try {
-    outcome = await tick(env);
+    outcome = await tick(env, at);
   } catch (error) {
     outcome = { error: error instanceof Error ? error.message : String(error) };
   }
   console.log("tick", JSON.stringify(outcome));
-  // KV writes are limited: an idle tick leaves no trace.
-  if (outcome.sent || outcome.error || outcome.failed) await env.STATE.put("last", JSON.stringify({ at: Date.now(), ...outcome }));
+  if (outcome.sent || outcome.error || outcome.failed) await remember(env.STATE, { at: Date.now(), ...outcome });
   return outcome;
 }
 
@@ -305,7 +380,7 @@ export default {
     }
   },
 
-  async scheduled(_controller: ScheduledController, env: Env): Promise<void> {
-    await runTick(env);
+  async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    await runTick(env, controller.scheduledTime);
   },
 } satisfies ExportedHandler<Env>;

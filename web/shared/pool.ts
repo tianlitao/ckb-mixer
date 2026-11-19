@@ -128,21 +128,24 @@ interface Link {
   locks: ScriptJson[];
 }
 
+/** Puts the transactions `hashes` name into `known`: those it lacks, in one batch. */
+async function load(rpc: Rpc, known: Map<string, ChainTx>, hashes: string[]) {
+  const wanted = [...new Set(hashes)].filter((h) => !known.has(h));
+  const found = await rpc.transactions(wanted);
+  wanted.forEach((h, i) => {
+    const tx = found[i];
+    if (!tx) throw new Error(`节点没有交易 ${h}`);
+    known.set(h, tx);
+  });
+}
+
+const spentBy = ({ tx }: ChainTx) => tx.inputs.map((input) => input.previous_output.tx_hash);
+
 async function link(rpc: Rpc, hash: string, known: Map<string, ChainTx>): Promise<Link> {
-  const missing = (hashes: string[]) => [...new Set(hashes)].filter((h) => !known.has(h));
-  const fetch = async (hashes: string[]) => {
-    const wanted = missing(hashes);
-    const found = await rpc.transactions(wanted);
-    wanted.forEach((h, i) => {
-      const tx = found[i];
-      if (!tx) throw new Error(`节点没有交易 ${h}`);
-      known.set(h, tx);
-    });
-  };
-  await fetch([hash]);
+  await load(rpc, known, [hash]);
   const found = known.get(hash)!;
   if (found.status !== "committed") throw new Error(`池子交易 ${hash} 还没有上链`);
-  await fetch(found.tx.inputs.map((input) => input.previous_output.tx_hash));
+  await load(rpc, known, spentBy(found));
 
   const out: Link = { found, locks: [] };
   found.tx.inputs.forEach((input, index) => {
@@ -167,8 +170,16 @@ async function replay(rpc: Rpc, cell: LiveCell, checkpoint?: Checkpoint): Promis
   if (checkpoint?.tx === cell.out_point.tx_hash) {
     return { ledger: Ledger.restore(POOL_ARGS, checkpoint.snapshot), replayed: 0 };
   }
-  // Walk back from the live cell to the checkpoint, or to the creation.
+  // The walk below asks for one pool transaction at a time, then for what it
+  // spends: two requests each. The indexer can say which ones it will be, so
+  // they are fetched ahead in a few batches. Only a shortcut: the walk still
+  // follows the pool cell itself, and asks for whatever is missing here.
   const known = new Map<string, ChainTx>();
+  const history = await rpc.typeHistory(POOL_TYPE, checkpoint?.tx);
+  await load(rpc, known, history);
+  await load(rpc, known, history.flatMap((hash) => spentBy(known.get(hash)!)));
+
+  // Walk back from the live cell to the checkpoint, or to the creation.
   const links: Link[] = [];
   let ledger: Ledger | undefined;
   for (let hash = cell.out_point.tx_hash; !ledger; ) {
